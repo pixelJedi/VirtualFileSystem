@@ -130,4 +130,8 @@ VFS::~VFS()
 
 void FillWithZeros(std::fstream& fs, size_t size)
 {
+	char c = char(0b0);
+	while (size--) {
+		fs.write(&c, 1);
+	}
 }
