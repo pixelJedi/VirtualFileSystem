@@ -1,5 +1,8 @@
 #include "IVFS.h"
 
+#include <sstream>
+#include <iostream>
+
 /* ---File------------------------------------------------------------------ */
 
 char* File::ReadNext()
@@ -24,17 +27,19 @@ File::~File()
 
 uint32_t VDisk::EstimateNodeÑapacity(size_t size) const
 {
-	return uint32_t();
+	// CLUSTER of BLOCKS is estimated per file by default
+	return uint32_t((size - DISKDATA) / (NODEDATA + CLUSTER * BLOCK));
 }
 
 uint32_t VDisk::EstimateBlockÑapacity(size_t size) const
 {
-	return uint32_t();
+	return uint32_t((size - DISKDATA - (size - DISKDATA) / (NODEDATA + CLUSTER * BLOCK) * NODEDATA) / BLOCK);
 }
 
 bool VDisk::InitializeDisk()
 {
-	return false;
+	FillWithZeros(disk,sizeInBytes);
+	return true;
 }
 
 bool VDisk::SetBytes(size_t position, const char* data, size_t length)
@@ -57,9 +62,30 @@ File* VDisk::SeekFile(const char* name) const
 	return nullptr;
 }
 
+/*
+-------------------------------------------
+VDisk {name} usage:
+Nodes used:		{x} of {x} ({x.xx}%)
+Blocks used:	{x} of {x} ({x.xx}%)
+
+Free dataspace:	{x} of {x} bytes ({x.xx}%)
+-------------------------------------------
+*/
 std::string VDisk::PrintSpaceLeft() const
 {
-	return std::string();
+	size_t freeSpace = freeBlocks * BLOCK;
+
+	std::ostringstream info;
+	info.precision(2);
+	info << std::fixed;
+	info << "-------------------------------------------\n";
+	info << "VDisk \"" << name << "\" usage:\n";
+	info << "Nodes used: \t" << (maxNode-freeNodes) << " of " << maxNode << " (" << ((maxNode - freeNodes) * 1.0 / maxNode) * 100 << "%)\n";
+	info << "Blocks used:\t" << (maxBlock-freeBlocks) << " of " << maxBlock << " (" << ((maxBlock - freeBlocks) * 1.0 / maxBlock) * 100 << "%)\n\n";
+	info << "Free dataspace:\t" << freeSpace << " of " << sizeInBytes << " bytes (" << ((freeSpace * 1.0) / sizeInBytes) * 100 << "%)\n";
+	info << "-------------------------------------------\n";
+
+	return info.str();
 }
 
 VDisk::VDisk(const std::string fileName):
@@ -68,6 +94,10 @@ VDisk::VDisk(const std::string fileName):
 	maxNode(EstimateNodeÑapacity(sizeInBytes)),
 	maxBlock(EstimateBlockÑapacity(sizeInBytes))
 {
+	VDisk::disk.open(fileName, std::fstream::in | std::fstream::out | std::ios::binary);
+	freeNodes = maxNode;
+	freeBlocks = maxBlock;
+
 }
 
 VDisk::VDisk(const std::string fileName, const uint64_t size) :
@@ -76,10 +106,15 @@ VDisk::VDisk(const std::string fileName, const uint64_t size) :
 	maxNode(EstimateNodeÑapacity(size)),
 	maxBlock(EstimateBlockÑapacity(size))
 {
+	freeNodes = maxNode;
+	freeBlocks = maxBlock;
+	VDisk::disk.open(fileName, std::fstream::in | std::fstream::out | std::ios::binary);
+	InitializeDisk();
 }
 
 VDisk::~VDisk()
 {
+	disk.close();
 }
 
 /* ---VFS------------------------------------------------------------------- */
