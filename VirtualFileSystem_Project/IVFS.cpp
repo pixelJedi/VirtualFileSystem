@@ -25,31 +25,36 @@ File::~File()
 
 /* ---VDisk----------------------------------------------------------------- */
 
-uint32_t VDisk::EstimateNodeÑapacity(size_t size) const
+std::map<VDisk::Sections, uint32_t> VDisk::metadataAddr = {
+	{Sections::freeNodes,	0 * ADDR},
+	{Sections::freeBlocks,	1 * ADDR},
+	{Sections::maxNode,		2 * ADDR},
+	{Sections::nextFree,	3 * ADDR},
+	{Sections::firstNode,	4 * ADDR}
+};
+
+uint32_t VDisk::EstimateNodeCapacity(size_t size) const
 {
 	// CLUSTER of BLOCKS is estimated per file by default
 	return uint32_t((size - DISKDATA) / (NODEDATA + CLUSTER * BLOCK));
 }
-
-uint32_t VDisk::EstimateBlockÑapacity(size_t size) const
+uint32_t VDisk::EstimateBlockCapacity(size_t size) const
 {
 	return uint32_t((size - DISKDATA - (size - DISKDATA) / (NODEDATA + CLUSTER * BLOCK) * NODEDATA) / BLOCK);
 }
 
-bool VDisk::InitializeDisk()
+bool VDisk::SetBytes(uint32_t position, const char* data, uint32_t length)
 {
-	FillWithZeros(disk,sizeInBytes);
+	disk.seekp(position, std::ios_base::beg);
+	disk.write(data, length);
 	return true;
 }
 
-bool VDisk::SetBytes(size_t position, const char* data, size_t length)
+bool VDisk::GetBytes(uint32_t position, char* data, uint32_t length)
 {
-	return false;
-}
-
-bool VDisk::GetBytes(size_t position, const char* data, size_t length)
-{
-	return false;
+	disk.seekg(position, std::ios_base::beg);
+	disk.read((char*)&data, length);
+	return true;
 }
 
 uint64_t VDisk::GetSize()
@@ -88,11 +93,60 @@ std::string VDisk::PrintSpaceLeft() const
 	return info.str();
 }
 
+bool VDisk::InitializeDisk()
+{
+	try
+	{
+		FillWithZeros(disk, sizeInBytes);
+		UpdateDisk();
+	}
+	catch (...)
+	{
+		return false;
+	}
+	return true;
+}
+
+/// <summary>
+/// Saves the VDisk stats in the assosiated file
+/// </summary>
+bool VDisk::UpdateDisk()
+{
+	try
+	{
+		SetBytes(metadataAddr[Sections::freeNodes], DataToChar(freeNodes), ADDR);
+		SetBytes(metadataAddr[Sections::freeBlocks], DataToChar(freeBlocks), ADDR);
+		SetBytes(metadataAddr[Sections::maxNode], DataToChar(maxNode), ADDR);
+		SetBytes(metadataAddr[Sections::nextFree], DataToChar(nextFree), ADDR);
+	}
+	catch (...)
+	{
+		return false;
+	}
+	return true;
+}
+
+char* VDisk::ReadInfo(VDisk::Sections info)
+{
+	char* bytes = new char[ADDR];
+	switch (info)
+	{
+	case VDisk::Sections::freeNodes:
+	case VDisk::Sections::freeBlocks:
+	case VDisk::Sections::maxNode:
+	case VDisk::Sections::nextFree:
+		GetBytes(metadataAddr[info],bytes,ADDR);
+		return bytes;
+	default:
+		return nullptr;
+	}
+}
+
 VDisk::VDisk(const std::string fileName):
 	name(fileName),
-	sizeInBytes(GetSize()),
-	maxNode(EstimateNodeÑapacity(sizeInBytes)),
-	maxBlock(EstimateBlockÑapacity(sizeInBytes))
+	sizeInBytes(CharToInt32(ReadInfo(Sections::maxNode))),
+	maxNode(EstimateNodeCapacity(sizeInBytes)),
+	maxBlock(EstimateBlockCapacity(sizeInBytes))
 {
 	VDisk::disk.open(fileName, std::fstream::in | std::fstream::out | std::ios::binary);
 	freeNodes = maxNode;
@@ -102,9 +156,9 @@ VDisk::VDisk(const std::string fileName):
 
 VDisk::VDisk(const std::string fileName, const uint64_t size) :
 	name(fileName),
-	sizeInBytes(size),
-	maxNode(EstimateNodeÑapacity(size)),
-	maxBlock(EstimateBlockÑapacity(size))
+	sizeInBytes(size),	// todo: truncate to fit blocks estimated
+	maxNode(EstimateNodeCapacity(sizeInBytes)),
+	maxBlock(EstimateBlockCapacity(sizeInBytes))
 {
 	freeNodes = maxNode;
 	freeBlocks = maxBlock;
@@ -114,6 +168,7 @@ VDisk::VDisk(const std::string fileName, const uint64_t size) :
 
 VDisk::~VDisk()
 {
+	UpdateDisk();
 	disk.close();
 }
 
@@ -169,4 +224,42 @@ void FillWithZeros(std::fstream& fs, size_t size)
 	while (size--) {
 		fs.write(&c, 1);
 	}
+}
+
+char* DataToChar(const std::uint32_t& data)
+{
+	const int mask = 0xFF;
+	uint32_t temp = data;
+
+	char* bytes = new char[sizeof(data)];
+	for (int i = 0; i != sizeof(data); ++i)
+	{
+		bytes[i] = (temp >> ((sizeof(data) - i - 1) * BYTE)) & mask;
+	}
+	return bytes;
+}
+char* DataToChar(const std::string data)
+{
+	char* bytes = new char[data.length() + 1];
+	strcpy_s(bytes, data.length()+1, data.c_str());
+	return bytes;
+}
+
+uint32_t CharToInt32(const char* bytes)
+{
+	const int mask = 0xFF;
+	uint32_t data = 0;
+
+	for (int i = 0; i != sizeof(int32_t); ++i)
+	{
+		data *= 0b100000000;
+		data += (bytes[i] & mask);
+	}
+	/*
+	while (*bytes)
+	{
+		total *= 2;
+		if (*bytes++ == '1') total += 1;
+	}*/
+	return data;
 }

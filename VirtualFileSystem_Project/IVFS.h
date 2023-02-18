@@ -44,28 +44,48 @@ class VDisk
 {
 private:
 	// todo: replace the temporary const handling
-	#define CLUSTER		16				// Default blocks estimated per file
+	#define BYTE		8
 	#define BLOCK		1024			// Reserved per block, bytes
-	#define ADDR		3				// Address length, bytes
-	#define DISKDATA	12				// Reserved for disk info, bytes
-	#define NODEDATA	57				// Reserved per node, bytes
-	static const std::map<std::string, uint32_t> metadataAddr;	// Offsets in bytes for data sections
+	#define CLUSTER		16				// Default blocks estimated per file
+	#define ADDR		4				// Address length, bytes
+	#define DISKDATA	ADDR*4			// Reserved for disk info, bytes
+	#define NODEDATA	64				// Reserved per node, bytes
+	enum class Sections 
+	{ 
+		freeNodes,
+		freeBlocks, 
+		maxNode, 
+		nextFree,
+		firstNode,
+		firstBlock
+	};
+	struct SectionsClassHash
+	{
+		template <typename T>
+		std::size_t operator()(T t) const
+		{
+			return static_cast<std::size_t>(t);
+		}
+	};
+	static std::map<Sections, uint32_t> metadataAddr;	// Offsets in bytes for data sections
 
-	std::fstream disk;					// Main data stream
+	std::fstream disk;					// Main data in/out stream
 
 	const uint64_t sizeInBytes;			// The limitation is fixed and determines the number of files available
 	const uint32_t maxNode;				// The number of files that can be stored
 	const uint32_t maxBlock;			// The memory is allocated by Blocks
 	uint32_t freeNodes;
 	uint32_t freeBlocks;
-	uint32_t nextFreeCluster;			// For fast write access
+	uint32_t nextFree;					// For fast write access
 
-	uint32_t EstimateNode—apacity(size_t size) const;
-	uint32_t EstimateBlock—apacity(size_t size) const;
+	uint32_t EstimateNodeCapacity(size_t size) const;
+	uint32_t EstimateBlockCapacity(size_t size) const;
 	bool InitializeDisk();
+	bool UpdateDisk();
+	char* ReadInfo(Sections info);
 
-	bool SetBytes(size_t position, const char* data, size_t length);
-	bool GetBytes(size_t position, const char* data, size_t length);
+	bool SetBytes(uint32_t position, const char* data, uint32_t length);
+	bool GetBytes(uint32_t position, char* data, uint32_t length);
 public:
 	const std::string name;
 
@@ -120,3 +140,8 @@ public:
 /* ---Misc------------------------------------------------------------------ */
 
 void FillWithZeros(std::fstream& fs, size_t size);
+
+char* DataToChar(const std::uint32_t& data);
+char* DataToChar(const std::string data);
+
+uint32_t CharToInt32(const char* bytes);
