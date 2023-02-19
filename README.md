@@ -10,7 +10,7 @@ Each VDisk is assosiated with a physical file in the underlying file system.
 - If the file with the name provided doesn't exist yet, the VDisk creates it and initializes based on the size estimation.
 
 ### Implementation
-![VDisk internals](https://github.com/pixelJedi/VirtualFileSystem/blob/master/VirtualFileSystem_Description/VDisk.png?raw=true)
+![VDisk internals](/VirtualFileSystem_Description/VDisk.png)
 
 The VDisk consists of 3 main data sections:
 1. **Disk Data**. Saves the general data about the VDisk:
