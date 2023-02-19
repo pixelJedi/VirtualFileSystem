@@ -348,12 +348,6 @@ uint32_t CharToInt32(const char* bytes)
 		data *= 0b100000000;
 		data += (bytes[i] & mask);
 	}
-	/*
-	while (*bytes)
-	{
-		total *= 2;
-		if (*bytes++ == '1') total += 1;
-	}*/
 	return data;
 }
 
