@@ -104,6 +104,10 @@ uint64_t VDisk::GetSize() const
 {
 	return sizeInBytes;
 }
+std::string VDisk::GetName() const
+{
+	return name;
+}
 
 bool VDisk::InitializeDisk()
 {
@@ -194,6 +198,7 @@ VDisk::~VDisk()
 bool VFS::MountOrCreate(std::string& diskName)
 {
 	std::cout << "-------------------------------------------\n";
+	bool mountSuccessful = false;
 	try
 	{
 		if (!std::filesystem::exists(diskName))
@@ -218,7 +223,8 @@ bool VFS::MountOrCreate(std::string& diskName)
 					VDisk* vd = new VDisk(diskName, diskSize);
 					VFS::disks.push_back(vd);
 					std::cout << "Created and mounted disk \"" + diskName + "\" with size " + std::to_string(vd->GetSize()) + " B\n";
-					return true;
+					mountSuccessful = true;
+					break;
 				}
 				std::cout << "Size is invalid. ";
 			}
@@ -235,18 +241,34 @@ bool VFS::MountOrCreate(std::string& diskName)
 		else
 		{
 			std::cout << "Mounted disk \"" << diskName << "\" to the VFS\n";
-			//VFS::disks.push_back(VDisk(diskName));
-			return true;
+			VFS::disks.push_back(new VDisk(diskName));
+			mountSuccessful = true;
 		}
 	}
 	catch (...)
 	{
 	}
-	return false;
+	std::cout << "-------------------------------------------\n";
+	return mountSuccessful;
 }
 
 bool VFS::Unmount(const std::string& diskName)
 {
+	if (disks.empty())
+	{
+		std::cout << "No mounted disks\n";
+		return false;
+	}
+	for (auto iter = disks.begin(); iter != disks.end(); )
+	{
+		if ((*iter)->GetName() == diskName)
+		{
+			disks.erase(iter);
+			std::cout << "Disk \"" << diskName << "\" was unmounted\n";
+			return true;
+		}
+	}
+	std::cout << "Disk \"" << diskName << "\" not found\n";
 	return false;
 }
 

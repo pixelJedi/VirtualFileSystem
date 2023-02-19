@@ -10,16 +10,15 @@ int main()
 {
 	string testname = "zeros.tfs";
 	size_t size = 1024 * 1024;	// 1 Mb
-	//cout << "Testing file " << testname << endl;
+	cout << "Testing file " << testname << " size " << size << endl;
 	
-	//FillWithZeros(fs, size);
-
 
 	// Testing VFS
 	/**/
 	VFS* vfs = new VFS();
-	string str = "exisas";
+	string str = "notexisting";
 	vfs->MountOrCreate(str);
+	vfs->Unmount(str);
 
 	// Testing VDisk
 	/*
@@ -46,25 +45,6 @@ int main()
 	char* ptr = DataToChar(test);
 	test = CharToInt32(ptr);
 	cout << test;*/
-
-	// Testing VFS 
-	/*
-	VFS* testVFS = new VFS();
-	testVFS->MountOrCreate(testname);
-	delete testVFS;*/
-
-	// Testing filestreams:
-	/*
-	fstream fs;
-	fs.open(testname, ios_base::in | ios_base::out | ios_base::binary);
-	fs.seekp(0, std::ios_base::beg);
-	int s = 123;
-	fs.write(to_string(s).c_str(), ADDR);
-	fs.seekg(0, std::ios_base::beg);
-	int str;
-	fs.read((char*)&str, ADDR);
-	cout << str << endl;
-	fs.close();*/
 
 	// Measuring time:
 	//clock_t tStart = clock();

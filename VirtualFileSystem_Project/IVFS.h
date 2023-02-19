@@ -69,7 +69,6 @@ private:
 	};
 	static std::map<Sections, uint32_t> metadataAddr;	// Offsets in bytes for data sections
 
-	std::fstream disk;					// Main data in/out stream
 
 	const std::string name;
 	const uint64_t sizeInBytes;			// The limitation is fixed and determines the number of files available
@@ -90,9 +89,11 @@ private:
 	bool SetBytes(uint32_t position, const char* data, uint32_t length);
 	bool GetBytes(uint32_t position, char* data, uint32_t length);
 public:
+	std::fstream disk;					// Main data in/out stream
 	File* SeekFile(const char* name) const;
 	std::string PrintSpaceLeft() const;
 	uint64_t GetSize() const;
+	std::string GetName() const;
 
 	VDisk() = delete;
 	VDisk(const std::string fileName);							// Open existing VDisk
