@@ -12,16 +12,27 @@
 struct File
 {
 private:
-	uint32_t _addr;		// Unmutable
-	uint32_t _size;		// Unmutable
-	std::string _name;
+
+	uint32_t _nodeAddr;			// Unmutable
+	uint32_t _totalSize;		// Unmutable
+	std::string _name;			// TBD
+	size_t _rptr;				// Next unread byte of data
+
+public:
+	enum class Sections
+	{
+		nextTB,
+		sizeVal,
+		readPtr,
+		firstDataAddr
+	};
+	static std::map<Sections, uint32_t> info;	// Offsets in bytes for data sections
 
 	std::vector<uint32_t> blocks;
 
-	size_t rptr;		// Next unread byte of data
-public:
-	uint32_t GetAddr() { return _addr; };
-	uint32_t GetSize() { return _size; };
+	uint32_t GetNode() { return _nodeAddr; };
+	uint32_t GetAddr() { return *blocks.begin(); };
+	uint32_t GetSize() { return _totalSize; };
 	std::string GetName() { return _name; };
 	std::string SetName(std::string value) { _name = value; };
 
@@ -29,7 +40,7 @@ public:
 	size_t WriteData(char * data);
 
 	File() = delete;
-	File(uint32_t addr, uint32_t size, std::string name);
+	File(uint32_t nodeAddr, uint32_t blockAddr, std::string name);
 	~File();
 };
 
@@ -50,6 +61,7 @@ private:
 	#define ADDR		4				// Address length, bytes
 	#define DISKDATA	ADDR*4			// Reserved for disk info, bytes
 	#define NODEDATA	64				// Reserved per node, bytes
+
 	enum class Sections 
 	{ 
 		freeNodes,
@@ -80,19 +92,31 @@ private:
 
 	uint32_t EstimateNodeCapacity(size_t size) const;
 	uint32_t EstimateBlockCapacity(size_t size) const;
-	uint64_t EstimateRealSize(uint64_t size) const;
+	uint64_t EstimateMaxSize(uint64_t size) const;
 	uint64_t GetFileSize(std::string filename) const;
-	bool InitializeDisk();
+	bool InitDisk();
 	bool UpdateDisk();
 	char* ReadInfo(Sections info);
+
+	uint32_t GetFreeNode();
+	bool IsEmptyNode(char* nodeValue) const;
+	char* CreateNodeAt(uint32_t freeNode, uint32_t freeBlock, const char* name, bool isDir);
+	char BuildFileMetadata(bool isDir, bool inWriteMode, short inReadMode);
+
+	uint32_t TakeFreeBlocks(uint32_t& nextFree);
+	void InitTitleBlock(File* file);
 
 	bool SetBytes(uint32_t position, const char* data, uint32_t length);
 	bool GetBytes(uint32_t position, char* data, uint32_t length);
 public:
 	std::fstream disk;					// Main data in/out stream
+
 	File* SeekFile(const char* name) const;
+	File* Fmalloc(const char* name);
+
 	std::string PrintSpaceLeft() const;
-	uint64_t GetSize() const;
+	uint32_t BlocksLeft() const;
+	uint64_t GetSizeInBytes() const;
 	std::string GetName() const;
 
 	VDisk() = delete;
@@ -144,7 +168,7 @@ public:
 void FillWithZeros(std::fstream& fs, size_t size);
 char* OpenAndReadInfo(std::string filename, uint32_t position, const uint32_t length);
 
-char* DataToChar(const std::uint32_t& data);
+template<typename T> char* DataToChar(const T& data);
 char* DataToChar(const std::string data);
 
 uint32_t CharToInt32(const char* bytes);

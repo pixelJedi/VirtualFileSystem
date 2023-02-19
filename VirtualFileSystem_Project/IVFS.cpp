@@ -4,23 +4,36 @@
 #include <iostream>
 #include <limits>
 #include <filesystem>
+#include <bitset>
 
 /* ---File------------------------------------------------------------------ */
+
+std::map<File::Sections, uint32_t> File::info = {
+	{Sections::nextTB,			0 * ADDR},
+	{Sections::sizeVal,			1 * ADDR},
+	{Sections::readPtr,			3 * ADDR},
+	{Sections::firstDataAddr,	5 * ADDR}
+};
 
 char* File::ReadNext()
 {
 	return nullptr;
 }
-
 size_t File::WriteData(char* data)
 {
 	return size_t();
 }
 
-File::File(uint32_t addr, uint32_t size, std::string name)
+File::File(uint32_t nodeAddr, uint32_t blockAddr, std::string name)
 {
-}
+	_nodeAddr = nodeAddr;
+	_name = name;
+	_totalSize = 0;
+	_rptr = 0;
 
+	for(int i = 0;i<CLUSTER;++i)
+		blocks.push_back(blockAddr+i*BLOCK);
+}
 File::~File()
 {
 }
@@ -44,7 +57,7 @@ uint32_t VDisk::EstimateBlockCapacity(size_t size) const
 {
 	return uint32_t((size - DISKDATA - (size - DISKDATA) / (NODEDATA + CLUSTER * BLOCK) * NODEDATA) / BLOCK);
 }
-uint64_t VDisk::EstimateRealSize(uint64_t size) const
+uint64_t VDisk::EstimateMaxSize(uint64_t size) const
 {
 	return uint64_t(DISKDATA + EstimateNodeCapacity(size) * NODEDATA + EstimateBlockCapacity(size) * BLOCK);
 }
@@ -69,6 +82,63 @@ bool VDisk::GetBytes(uint32_t position, char* data, uint32_t length)
 	return true;
 }
 
+uint32_t VDisk::GetFreeNode()
+{
+	if (freeNodes)
+	{
+		char* nodeValue = new char[NODEDATA];
+		for (uint32_t i = 0; i <= maxNode; ++i)
+		{
+			GetBytes(metadataAddr[Sections::firstNode] + i, nodeValue, NODEDATA);
+			if (IsEmptyNode(nodeValue))
+				return i;
+		}
+	}
+	return UINT32_MAX;
+}
+bool VDisk::IsEmptyNode(char* nodeValue) const
+{
+	for (short i = 0; i != NODEDATA; ++i)
+		if (nodeValue[i] != char(0)) return true;
+	return false;
+}
+char* VDisk::CreateNodeAt(uint32_t freeNode, uint32_t freeBlock, const char* name, bool isDir)
+{
+	try
+	{
+		char* newNode = new char[NODEDATA];
+		short ibyte = 0;
+	// Node code
+		for (; ibyte < ADDR; ++ibyte)					
+			newNode[ibyte] = DataToChar(freeNode)[ibyte];
+	// Metadata
+		newNode[ibyte++] = BuildFileMetadata(isDir, 0, 0);
+	// Name
+		for (; ibyte < (NODEDATA-2*ADDR-1); ++ibyte)
+			newNode[ibyte] = name[ibyte];
+	// File address
+		for (; ibyte < ADDR; ++ibyte)					
+			newNode[ibyte] = DataToChar(freeBlock)[ibyte];
+		return newNode;
+	} 
+	catch(...)
+	{
+		return nullptr;
+	}
+}
+char VDisk::BuildFileMetadata(bool isDir, bool inWriteMode, short inReadMode)
+{
+	std::bitset<8> metabitset(inReadMode);
+	if (isDir) metabitset.set(7);
+	if (inWriteMode) metabitset.set(4);
+
+	return static_cast<char>(metabitset.to_ulong());
+}
+
+/// <summary>
+/// Checks if the file exists on disk, tracking downs the relations in the Node section
+/// </summary>
+/// <returns>File* if file exists, nullptr otherwise</returns>
 File* VDisk::SeekFile(const char* name) const
 {
 	return nullptr;
@@ -100,7 +170,7 @@ std::string VDisk::PrintSpaceLeft() const
 	return info.str();
 }
 
-uint64_t VDisk::GetSize() const
+uint64_t VDisk::GetSizeInBytes() const
 {
 	return sizeInBytes;
 }
@@ -109,7 +179,61 @@ std::string VDisk::GetName() const
 	return name;
 }
 
-bool VDisk::InitializeDisk()
+File* VDisk::Fmalloc(const char* name)
+{
+	if (!freeNodes) return nullptr;
+
+	uint32_t freeNode = GetFreeNode();
+	if (freeNode == UINT32_MAX)
+	{
+		std::cout << "Failed to find a free node\n";
+		return nullptr;
+	}   
+
+	uint32_t freeBlock = TakeFreeBlocks(nextFree);
+	if (freeBlock == UINT32_MAX)
+	{
+		std::cout << "Failed to get a free block\n";
+		return nullptr;
+	}
+
+	File* f = new File(freeNode, freeBlock, name);
+	SetBytes(metadataAddr[Sections::firstNode] + freeNode, CreateNodeAt(freeNode, freeBlock, name, 0), NODEDATA);
+	InitTitleBlock(f);
+
+	return f;
+}
+
+uint32_t VDisk::BlocksLeft() const
+{
+	return freeBlocks;
+}
+uint32_t VDisk::TakeFreeBlocks(uint32_t& nextFree)
+{
+	if (!freeBlocks) return UINT32_MAX;
+	// todo: implement proper tracking of busy block, e.g. bitmap
+	uint32_t curFree = nextFree;
+	nextFree = (nextFree + CLUSTER) > maxBlock ? UINT32_MAX : nextFree + CLUSTER;
+	// todo: make it respect eof
+	freeBlocks -= CLUSTER;
+	return curFree;
+}
+void VDisk::InitTitleBlock(File* file)
+{
+	char* data = new char[BLOCK];
+
+	SetBytes(file->GetAddr() + File::info[File::Sections::nextTB], DataToChar(file->GetAddr()), ADDR);
+	SetBytes(file->GetAddr() + File::info[File::Sections::sizeVal], DataToChar(file->GetSize()), 2 * ADDR);
+	SetBytes(file->GetAddr() + File::info[File::Sections::readPtr], DataToChar(0), 2 * ADDR);
+
+	uint64_t totalBlocks = file->blocks.size();
+	for(int i = 0; i < totalBlocks; ++i)
+		SetBytes(file->GetAddr() + File::info[File::Sections::firstDataAddr] + i * ADDR, DataToChar(file->blocks[i]), ADDR);
+
+	delete[] data;
+}
+
+bool VDisk::InitDisk()
 {
 	try
 	{
@@ -125,7 +249,6 @@ bool VDisk::InitializeDisk()
 	}
 	return true;
 }
-
 /// <summary>
 /// Saves the VDisk stats in the assosiated file
 /// </summary>
@@ -145,6 +268,7 @@ bool VDisk::UpdateDisk()
 	}
 	return true;
 }
+
 char* VDisk::ReadInfo(VDisk::Sections info)
 {
 	char* bytes; 
@@ -179,11 +303,11 @@ VDisk::VDisk(const std::string fileName, const uint64_t size) :
 	name(fileName),
 	maxNode(EstimateNodeCapacity(size)),
 	maxBlock(EstimateBlockCapacity(size)),
-	sizeInBytes(EstimateRealSize(size))
+	sizeInBytes(EstimateMaxSize(size))
 {
 	std::cout << "Disk \"" << name << "\" created\n";
 	VDisk::disk.open(fileName, std::fstream::in | std::fstream::out | std::fstream::binary | std::fstream::trunc);
-	if (!InitializeDisk())
+	if (!InitDisk())
 		std::cout << "Init failed!\n";
 }
 VDisk::~VDisk()
@@ -222,7 +346,7 @@ bool VFS::MountOrCreate(std::string& diskName)
 				{
 					VDisk* vd = new VDisk(diskName, diskSize);
 					VFS::disks.push_back(vd);
-					std::cout << "Created and mounted disk \"" + diskName + "\" with size " + std::to_string(vd->GetSize()) + " B\n";
+					std::cout << "Created and mounted disk \"" + diskName + "\" with size " + std::to_string(vd->GetSizeInBytes()) + " B\n";
 					mountSuccessful = true;
 					break;
 				}
@@ -251,7 +375,6 @@ bool VFS::MountOrCreate(std::string& diskName)
 	std::cout << "-------------------------------------------\n";
 	return mountSuccessful;
 }
-
 bool VFS::Unmount(const std::string& diskName)
 {
 	if (disks.empty())
@@ -284,7 +407,18 @@ File* VFS::Open(const char* name)
 
 File* VFS::Create(const char* name)
 {
-	return nullptr;
+	File* file = nullptr;
+	VDisk* mostFreeDisk = disks[0];
+
+	for (const auto& disk : disks)
+	{
+		file = disk->SeekFile(name);
+		if (file) return file;
+		if (disk->BlocksLeft() > mostFreeDisk->BlocksLeft()) mostFreeDisk = disk;
+	}
+	file = mostFreeDisk->Fmalloc(name);
+
+	return file;
 }
 
 size_t VFS::Read(File* f, char* buff, size_t len)
@@ -304,7 +438,6 @@ void VFS::Close(File* f)
 VFS::VFS()
 {
 }
-
 VFS::~VFS()
 {
 }
@@ -319,15 +452,14 @@ void FillWithZeros(std::fstream& fs, size_t size)
 	}
 }
 
-char* DataToChar(const std::uint32_t& data)
+template<typename T> char* DataToChar(const T& data)
 {
 	const int mask = 0xFF;
-	uint32_t temp = data;
 
 	char* bytes = new char[sizeof(data)];
 	for (int i = 0; i != sizeof(data); ++i)
 	{
-		bytes[i] = (temp >> ((sizeof(data) - i - 1) * BYTE)) & mask;
+		bytes[i] = (data >> ((sizeof(data) - i - 1) * BYTE)) & mask;
 	}
 	return bytes;
 }
