@@ -1,6 +1,23 @@
 # VirtualFileSystem
 The VFS (Virtual File System) is used for managing thousands of files packed in a few physical ones, which can be useful in systems with read/write limitations. This implementation is being developed mostly for educational purposes.
 
+## VFS
+![VDisk internals](/VirtualFileSystem_Description/VFS.png)
+
+### Operating
+The VFS class inherits IVFS interface which supports the following actions:
+- Open:		open an existing file for reading
+- Create:	open a new file for writing
+- Read:		load bytes from the file to the buffer
+- Write:	load bytes from the buffer to the file
+- Close:	close file
+
+### VDisk handling
+Each VFS can manage multiple VDisks (each is a file that represents a separate file hierarhy), but the user doesn't have to be aware of the details. The VFS manages all VDisk operations.
+It's possible to mount and unmount VDisks by providing names of corresponding files:
+- MountOrCreate(string filename)
+- Unmount(string filename)
+
 ## VDisk
 
 Each VDisk is assosiated with a physical file in the underlying file system.
