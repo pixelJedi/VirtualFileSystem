@@ -14,15 +14,22 @@ int main()
 	
 	//FillWithZeros(fs, size);
 
-	// Testing VDisk
+
+	// Testing VFS
 	/**/
+	VFS* vfs = new VFS();
+	string str = "exisas";
+	vfs->MountOrCreate(str);
+
+	// Testing VDisk
+	/*
 	VDisk* wd = new VDisk(testname, size);
 	cout << wd -> PrintSpaceLeft();
 	delete wd;
 
 	VDisk* rd = new VDisk(testname);
 	cout << rd -> PrintSpaceLeft();
-	delete rd;
+	delete rd;*/
 	
 	// Testing reading from files
 	/*

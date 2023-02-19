@@ -82,7 +82,7 @@ private:
 	uint32_t EstimateNodeCapacity(size_t size) const;
 	uint32_t EstimateBlockCapacity(size_t size) const;
 	uint64_t EstimateRealSize(uint64_t size) const;
-	uint64_t GetSize(std::string filename) const;
+	uint64_t GetFileSize(std::string filename) const;
 	bool InitializeDisk();
 	bool UpdateDisk();
 	char* ReadInfo(Sections info);
@@ -92,6 +92,7 @@ private:
 public:
 	File* SeekFile(const char* name) const;
 	std::string PrintSpaceLeft() const;
+	uint64_t GetSize() const;
 
 	VDisk() = delete;
 	VDisk(const std::string fileName);							// Open existing VDisk
@@ -121,7 +122,8 @@ struct IVFS
 class VFS : IVFS
 {
 private:
-	std::vector <VDisk> disks;
+	std::vector <VDisk*> disks;
+	bool IsValidSize(size_t size);
 public:
 	bool MountOrCreate(std::string& diskName);
 	bool Unmount(const std::string& diskName);

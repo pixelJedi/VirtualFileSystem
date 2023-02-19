@@ -2,6 +2,8 @@
 
 #include <sstream>
 #include <iostream>
+#include <limits>
+#include <filesystem>
 
 /* ---File------------------------------------------------------------------ */
 
@@ -46,7 +48,7 @@ uint64_t VDisk::EstimateRealSize(uint64_t size) const
 {
 	return uint64_t(DISKDATA + EstimateNodeCapacity(size) * NODEDATA + EstimateBlockCapacity(size) * BLOCK);
 }
-uint64_t VDisk::GetSize(std::string filename) const
+uint64_t VDisk::GetFileSize(std::string filename) const
 {
 	std::ifstream in(filename, std::ifstream::ate | std::ifstream::binary);
 	uint64_t size = in.tellg();
@@ -96,6 +98,11 @@ std::string VDisk::PrintSpaceLeft() const
 	info << "-------------------------------------------\n";
 
 	return info.str();
+}
+
+uint64_t VDisk::GetSize() const
+{
+	return sizeInBytes;
 }
 
 bool VDisk::InitializeDisk()
@@ -153,7 +160,7 @@ char* VDisk::ReadInfo(VDisk::Sections info)
 
 VDisk::VDisk(const std::string fileName):
 	name(fileName),
-	sizeInBytes(GetSize(fileName)),
+	sizeInBytes(GetFileSize(fileName)),
 	maxNode(CharToInt32(OpenAndReadInfo(fileName,metadataAddr[Sections::maxNode],ADDR))),
 	maxBlock(EstimateBlockCapacity(sizeInBytes))
 {
@@ -186,12 +193,66 @@ VDisk::~VDisk()
 
 bool VFS::MountOrCreate(std::string& diskName)
 {
+	std::cout << "-------------------------------------------\n";
+	try
+	{
+		if (!std::filesystem::exists(diskName))
+		{
+			char answer;
+			std::cout << "\"" << diskName << "\" doesn't exist. Create? y/n\n";
+			std::cin >> answer;
+			std::cin.ignore(UINT32_MAX, '\n');
+				std::cin.clear();
+			switch (answer)
+			{
+			case 'Y':
+			case 'y':
+			{
+				size_t diskSize = 0;
+				std::cout << "Specify size for disk \"" + diskName + "\", bytes (minimum " + std::to_string(DISKDATA + NODEDATA + CLUSTER*BLOCK) + " B)\n";
+				std::cin >> diskSize;
+				std::cin.ignore(UINT32_MAX, '\n');
+				std::cin.clear();
+				if (IsValidSize(diskSize))
+				{
+					VDisk* vd = new VDisk(diskName, diskSize);
+					VFS::disks.push_back(vd);
+					std::cout << "Created and mounted disk \"" + diskName + "\" with size " + std::to_string(vd->GetSize()) + " B\n";
+					return true;
+				}
+				std::cout << "Size is invalid. ";
+			}
+			[[fallthrough]];
+			case 'N':
+			case 'n':
+				std::cout << "Disk \"" << diskName << "\" was not mounted\n";
+				break;
+			default:
+				std::cout << "Bad input. Try again\n";
+				break;
+			}
+		}
+		else
+		{
+			std::cout << "Mounted disk \"" << diskName << "\" to the VFS\n";
+			//VFS::disks.push_back(VDisk(diskName));
+			return true;
+		}
+	}
+	catch (...)
+	{
+	}
 	return false;
 }
 
 bool VFS::Unmount(const std::string& diskName)
 {
 	return false;
+}
+
+bool VFS::IsValidSize(size_t size)
+{
+	return (size >= (DISKDATA + NODEDATA + CLUSTER * BLOCK) && size <= UINT32_MAX);
 }
 
 File* VFS::Open(const char* name)
