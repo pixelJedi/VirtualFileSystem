@@ -9,24 +9,36 @@ using namespace std;
 int main()
 {
 	string testname = "zeros.tfs";
-	size_t size = 1024 * 1024 * 2;	// 1 Mb
+	size_t size = 1024 * 1024;	// 1 Mb
 	//cout << "Testing file " << testname << endl;
 	
 	//FillWithZeros(fs, size);
 
 	// Testing VDisk
-	/*VDisk* vd = new VDisk(testname, size);
-	cout << vd -> PrintSpaceLeft();
-	delete vd;
+	/**/
+	VDisk* wd = new VDisk(testname, size);
+	cout << wd -> PrintSpaceLeft();
+	delete wd;
 
-	vd = new VDisk(testname);
-	cout << vd -> PrintSpaceLeft();
-	delete vd;*/
+	VDisk* rd = new VDisk(testname);
+	cout << rd -> PrintSpaceLeft();
+	delete rd;
+	
+	// Testing reading from files
+	/*
+	fstream fs;
+	fs.open(testname, std::fstream::in | std::ios::out | std::fstream::binary);
+	char* str = new char[ADDR];
+	fs.seekg(8,ios_base::beg);
+	fs.read(str, ADDR);
+	cout << CharToInt32(str);*/
 
+	// Testing data conversion
+	/*
 	uint32_t test = 1234567;
 	char* ptr = DataToChar(test);
 	test = CharToInt32(ptr);
-	cout << test;
+	cout << test;*/
 
 	// Testing VFS 
 	/*

@@ -42,6 +42,17 @@ uint32_t VDisk::EstimateBlockCapacity(size_t size) const
 {
 	return uint32_t((size - DISKDATA - (size - DISKDATA) / (NODEDATA + CLUSTER * BLOCK) * NODEDATA) / BLOCK);
 }
+uint64_t VDisk::EstimateRealSize(uint64_t size) const
+{
+	return uint64_t(DISKDATA + EstimateNodeCapacity(size) * NODEDATA + EstimateBlockCapacity(size) * BLOCK);
+}
+uint64_t VDisk::GetSize(std::string filename) const
+{
+	std::ifstream in(filename, std::ifstream::ate | std::ifstream::binary);
+	uint64_t size = in.tellg();
+	in.close();
+	return size;
+}
 
 bool VDisk::SetBytes(uint32_t position, const char* data, uint32_t length)
 {
@@ -49,17 +60,11 @@ bool VDisk::SetBytes(uint32_t position, const char* data, uint32_t length)
 	disk.write(data, length);
 	return true;
 }
-
 bool VDisk::GetBytes(uint32_t position, char* data, uint32_t length)
 {
 	disk.seekg(position, std::ios_base::beg);
-	disk.read((char*)&data, length);
+	disk.read(data, length);
 	return true;
-}
-
-uint64_t VDisk::GetSize()
-{
-	return uint64_t();
 }
 
 File* VDisk::SeekFile(const char* name) const
@@ -98,6 +103,9 @@ bool VDisk::InitializeDisk()
 	try
 	{
 		FillWithZeros(disk, sizeInBytes);
+		freeNodes = maxNode;
+		freeBlocks = maxBlock;
+		nextFree = DISKDATA + maxNode * NODEDATA;
 		UpdateDisk();
 	}
 	catch (...)
@@ -118,6 +126,7 @@ bool VDisk::UpdateDisk()
 		SetBytes(metadataAddr[Sections::freeBlocks], DataToChar(freeBlocks), ADDR);
 		SetBytes(metadataAddr[Sections::maxNode], DataToChar(maxNode), ADDR);
 		SetBytes(metadataAddr[Sections::nextFree], DataToChar(nextFree), ADDR);
+		std::cout << "Disk \"" << name << "\" updated\n";
 	}
 	catch (...)
 	{
@@ -125,51 +134,52 @@ bool VDisk::UpdateDisk()
 	}
 	return true;
 }
-
 char* VDisk::ReadInfo(VDisk::Sections info)
 {
-	char* bytes = new char[ADDR];
+	char* bytes; 
 	switch (info)
 	{
 	case VDisk::Sections::freeNodes:
 	case VDisk::Sections::freeBlocks:
 	case VDisk::Sections::maxNode:
 	case VDisk::Sections::nextFree:
-		GetBytes(metadataAddr[info],bytes,ADDR);
+		bytes = new char[ADDR];
+		GetBytes(metadataAddr[info], bytes, ADDR);
 		return bytes;
 	default:
 		return nullptr;
-	}
+	};
 }
 
 VDisk::VDisk(const std::string fileName):
 	name(fileName),
-	sizeInBytes(CharToInt32(ReadInfo(Sections::maxNode))),
-	maxNode(EstimateNodeCapacity(sizeInBytes)),
+	sizeInBytes(GetSize(fileName)),
+	maxNode(CharToInt32(OpenAndReadInfo(fileName,metadataAddr[Sections::maxNode],ADDR))),
 	maxBlock(EstimateBlockCapacity(sizeInBytes))
 {
-	VDisk::disk.open(fileName, std::fstream::in | std::fstream::out | std::ios::binary);
-	freeNodes = maxNode;
-	freeBlocks = maxBlock;
+	std::cout << "Disk \"" << name << "\" opened\n";
+	VDisk::disk.open(fileName, std::fstream::in | std::ios::out | std::fstream::binary);
+	freeNodes = CharToInt32(ReadInfo(Sections::freeNodes));
+	freeBlocks = CharToInt32(ReadInfo(Sections::freeBlocks));
+	nextFree = CharToInt32(ReadInfo(Sections::nextFree));
 
 }
-
 VDisk::VDisk(const std::string fileName, const uint64_t size) :
 	name(fileName),
-	sizeInBytes(size),	// todo: truncate to fit blocks estimated
-	maxNode(EstimateNodeCapacity(sizeInBytes)),
-	maxBlock(EstimateBlockCapacity(sizeInBytes))
+	maxNode(EstimateNodeCapacity(size)),
+	maxBlock(EstimateBlockCapacity(size)),
+	sizeInBytes(EstimateRealSize(size))
 {
-	freeNodes = maxNode;
-	freeBlocks = maxBlock;
-	VDisk::disk.open(fileName, std::fstream::in | std::fstream::out | std::ios::binary);
-	InitializeDisk();
+	std::cout << "Disk \"" << name << "\" created\n";
+	VDisk::disk.open(fileName, std::fstream::in | std::fstream::out | std::fstream::binary | std::fstream::trunc);
+	if (!InitializeDisk())
+		std::cout << "Init failed!\n";
 }
-
 VDisk::~VDisk()
 {
 	UpdateDisk();
 	disk.close();
+	std::cout << "Disk \"" << name << "\" closed\n";
 }
 
 /* ---VFS------------------------------------------------------------------- */
@@ -261,5 +271,18 @@ uint32_t CharToInt32(const char* bytes)
 		total *= 2;
 		if (*bytes++ == '1') total += 1;
 	}*/
+	return data;
+}
+
+char* OpenAndReadInfo(std::string filename, uint32_t position, const uint32_t length)
+{
+	char* data = new char[length];
+
+	std::ifstream is;
+	is.open(filename);
+	is.seekg(position, std::ios_base::beg);
+	is.read(data, length);
+	is.close();
+
 	return data;
 }

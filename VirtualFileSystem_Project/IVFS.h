@@ -71,6 +71,7 @@ private:
 
 	std::fstream disk;					// Main data in/out stream
 
+	const std::string name;
 	const uint64_t sizeInBytes;			// The limitation is fixed and determines the number of files available
 	const uint32_t maxNode;				// The number of files that can be stored
 	const uint32_t maxBlock;			// The memory is allocated by Blocks
@@ -80,6 +81,8 @@ private:
 
 	uint32_t EstimateNodeCapacity(size_t size) const;
 	uint32_t EstimateBlockCapacity(size_t size) const;
+	uint64_t EstimateRealSize(uint64_t size) const;
+	uint64_t GetSize(std::string filename) const;
 	bool InitializeDisk();
 	bool UpdateDisk();
 	char* ReadInfo(Sections info);
@@ -87,10 +90,6 @@ private:
 	bool SetBytes(uint32_t position, const char* data, uint32_t length);
 	bool GetBytes(uint32_t position, char* data, uint32_t length);
 public:
-	const std::string name;
-
-	uint64_t GetSize();
-
 	File* SeekFile(const char* name) const;
 	std::string PrintSpaceLeft() const;
 
@@ -140,6 +139,7 @@ public:
 /* ---Misc------------------------------------------------------------------ */
 
 void FillWithZeros(std::fstream& fs, size_t size);
+char* OpenAndReadInfo(std::string filename, uint32_t position, const uint32_t length);
 
 char* DataToChar(const std::uint32_t& data);
 char* DataToChar(const std::string data);
