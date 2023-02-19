@@ -1,6 +1,16 @@
 # VirtualFileSystem
 The VFS (Virtual File System) is used for managing thousands of files packed in a few physical ones, which can be useful in systems with read/write limitations. This implementation is being developed mostly for educational purposes.
 
+Currently, the following constants are used:
+```
+BYTE		= 8 bits
+BLOCK		= 1024 bytes	memory for files is allocated in blocks
+CLUSTER		= 16 blocks		cluster is reserved per file when created
+ADDR		= 4 bytes		4-byte addresses are used, stored as uint32_t
+DISKDATA	= 4*ADDR bytes	(see below)
+NODEDATA	= 64 bytes		(see below)
+```
+
 ## VFS
 ![VDisk internals](/VirtualFileSystem_Description/VFS.png)
 
@@ -50,5 +60,27 @@ The VDisk consists of 3 main data sections:
 		- First block of the file is a Title block that stores name and block adresses of the file
 	- Each CLUSTER is a fixed number of blocks. A whole cluster is reserved per file even is less space is actually required
 
+## File
 
+Physically, a File is stored in blocks on VDisk. It consists of title and data blocks.
+- **Title blocks** store addresses of data blocks. First title block is the main one; it also stores some other information
+- **Data blocks** store data
 
+As a struct, the File is intended to provide quick access to the data. When a File is opened, the vector of block addresses is loaded. To prevent collisions, flags are set in the file's node.
+
+### Title block
+![VDisk internals](/VirtualFileSystem_Description/TitleBlocks.png)
+
+Title blocks [TB] are made this way:
+1. File's info area:
+	- `Next TB`:		address of the succeeding TB. If there is no one, the TB addresses itself
+	- `Size`:			real size (in bytes) of the data written in the file
+	- `Read pointer`:	the byte after the last modified [is likely to be removed as `Size` does the job]
+2. File's data addresses area.
+	- The address after the last one used addresses TB
+	- If there is no space for new addresses, a new TB is created, its address is written to the `Next TB` byte.
+	
+### Data block
+`Note. Currently it's hard to effectively track available blocks. The idea is to use bitmaps and store it in the Disk Data section`
+Data block stores binary data.
+When a new block is required, the VDisk is checked for relevant info on available blocks.
