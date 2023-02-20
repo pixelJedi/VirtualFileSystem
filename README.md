@@ -75,7 +75,6 @@ Title blocks [TB] are made this way:
 1. File's info area:
 	- `Next TB`:		address of the succeeding TB. If there is no one, the TB addresses itself
 	- `Size`:			real size (in bytes) of the data written in the file
-	- `Read pointer`:	the byte after the last modified [is likely to be removed as `Size` does the job]
 2. File's data addresses area.
 	- The address after the last one used addresses TB
 	- If there is no space for new addresses, a new TB is created, its address is written to the `Next TB` byte.

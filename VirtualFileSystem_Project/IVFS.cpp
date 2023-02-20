@@ -8,12 +8,16 @@
 
 /* ---File------------------------------------------------------------------ */
 
-std::map<File::Sections, uint32_t> File::info = {
+std::map<File::Sections, uint32_t> File::infoAddr = {
 	{Sections::nextTB,			0 * ADDR},
 	{Sections::sizeVal,			1 * ADDR},
-	{Sections::readPtr,			3 * ADDR},
-	{Sections::firstDataAddr,	5 * ADDR}
+	{Sections::firstDataAddr,	3 * ADDR}
 };
+
+uint64_t File::ReadPtr() const
+{	
+	return uint64_t(GetSize() % BLOCK + 1);
+}
 
 char* File::ReadNext()
 {
@@ -28,8 +32,7 @@ File::File(uint32_t nodeAddr, uint32_t blockAddr, std::string name)
 {
 	_nodeAddr = nodeAddr;
 	_name = name;
-	_totalSize = 0;
-	_rptr = 0;
+	_realSize = 0;
 
 	for(int i = 0;i<CLUSTER;++i)
 		blocks.push_back(blockAddr+i*BLOCK);
@@ -40,7 +43,7 @@ File::~File()
 
 /* ---VDisk----------------------------------------------------------------- */
 
-std::map<VDisk::Sections, uint32_t> VDisk::metadataAddr = {
+std::map<VDisk::Sections, uint32_t> VDisk::infoAddr = {
 	{Sections::freeNodes,	0 * ADDR},
 	{Sections::freeBlocks,	1 * ADDR},
 	{Sections::maxNode,		2 * ADDR},
@@ -61,7 +64,7 @@ uint64_t VDisk::EstimateMaxSize(uint64_t size) const
 {
 	return uint64_t(DISKDATA + EstimateNodeCapacity(size) * NODEDATA + EstimateBlockCapacity(size) * BLOCK);
 }
-uint64_t VDisk::GetFileSize(std::string filename) const
+uint64_t VDisk::GetDiskSize(std::string filename) const
 {
 	std::ifstream in(filename, std::ifstream::ate | std::ifstream::binary);
 	uint64_t size = in.tellg();
@@ -89,7 +92,7 @@ uint32_t VDisk::GetFreeNode()
 		char* nodeValue = new char[NODEDATA];
 		for (uint32_t i = 0; i <= maxNode; ++i)
 		{
-			GetBytes(metadataAddr[Sections::firstNode] + i, nodeValue, NODEDATA);
+			GetBytes(infoAddr[Sections::firstNode] + i, nodeValue, NODEDATA);
 			if (IsEmptyNode(nodeValue))
 				return i;
 		}
@@ -133,6 +136,10 @@ char VDisk::BuildFileMetadata(bool isDir, bool inWriteMode, short inReadMode)
 	if (inWriteMode) metabitset.set(4);
 
 	return static_cast<char>(metabitset.to_ulong());
+}
+uint64_t VDisk::AbsoluteReadPtr(File* file) const
+{
+	return (file->blocks.at(file->GetSize() / BLOCK + 1) + file->ReadPtr());
 }
 
 /// <summary>
@@ -198,7 +205,7 @@ File* VDisk::Fmalloc(const char* name)
 	}
 
 	File* f = new File(freeNode, freeBlock, name);
-	SetBytes(metadataAddr[Sections::firstNode] + freeNode, CreateNodeAt(freeNode, freeBlock, name, 0), NODEDATA);
+	SetBytes(infoAddr[Sections::firstNode] + freeNode, CreateNodeAt(freeNode, freeBlock, name, 0), NODEDATA);
 	InitTitleBlock(f);
 
 	return f;
@@ -222,13 +229,12 @@ void VDisk::InitTitleBlock(File* file)
 {
 	char* data = new char[BLOCK];
 
-	SetBytes(file->GetAddr() + File::info[File::Sections::nextTB], DataToChar(file->GetAddr()), ADDR);
-	SetBytes(file->GetAddr() + File::info[File::Sections::sizeVal], DataToChar(file->GetSize()), 2 * ADDR);
-	SetBytes(file->GetAddr() + File::info[File::Sections::readPtr], DataToChar(0), 2 * ADDR);
+	SetBytes(file->GetAddr() + File::infoAddr[File::Sections::nextTB], DataToChar(file->GetAddr()), ADDR);
+	SetBytes(file->GetAddr() + File::infoAddr[File::Sections::sizeVal], DataToChar(file->GetSize()), 2 * ADDR);
 
 	uint64_t totalBlocks = file->blocks.size();
 	for(int i = 0; i < totalBlocks; ++i)
-		SetBytes(file->GetAddr() + File::info[File::Sections::firstDataAddr] + i * ADDR, DataToChar(file->blocks[i]), ADDR);
+		SetBytes(file->GetAddr() + File::infoAddr[File::Sections::firstDataAddr] + i * ADDR, DataToChar(file->blocks[i]), ADDR);
 
 	delete[] data;
 }
@@ -256,10 +262,10 @@ bool VDisk::UpdateDisk()
 {
 	try
 	{
-		SetBytes(metadataAddr[Sections::freeNodes], DataToChar(freeNodes), ADDR);
-		SetBytes(metadataAddr[Sections::freeBlocks], DataToChar(freeBlocks), ADDR);
-		SetBytes(metadataAddr[Sections::maxNode], DataToChar(maxNode), ADDR);
-		SetBytes(metadataAddr[Sections::nextFree], DataToChar(nextFree), ADDR);
+		SetBytes(infoAddr[Sections::freeNodes], DataToChar(freeNodes), ADDR);
+		SetBytes(infoAddr[Sections::freeBlocks], DataToChar(freeBlocks), ADDR);
+		SetBytes(infoAddr[Sections::maxNode], DataToChar(maxNode), ADDR);
+		SetBytes(infoAddr[Sections::nextFree], DataToChar(nextFree), ADDR);
 		std::cout << "Disk \"" << name << "\" updated\n";
 	}
 	catch (...)
@@ -279,7 +285,7 @@ char* VDisk::ReadInfo(VDisk::Sections info)
 	case VDisk::Sections::maxNode:
 	case VDisk::Sections::nextFree:
 		bytes = new char[ADDR];
-		GetBytes(metadataAddr[info], bytes, ADDR);
+		GetBytes(infoAddr[info], bytes, ADDR);
 		return bytes;
 	default:
 		return nullptr;
@@ -288,8 +294,8 @@ char* VDisk::ReadInfo(VDisk::Sections info)
 
 VDisk::VDisk(const std::string fileName):
 	name(fileName),
-	sizeInBytes(GetFileSize(fileName)),
-	maxNode(CharToInt32(OpenAndReadInfo(fileName,metadataAddr[Sections::maxNode],ADDR))),
+	sizeInBytes(GetDiskSize(fileName)),
+	maxNode(CharToInt32(OpenAndReadInfo(fileName,infoAddr[Sections::maxNode],ADDR))),
 	maxBlock(EstimateBlockCapacity(sizeInBytes))
 {
 	std::cout << "Disk \"" << name << "\" opened\n";

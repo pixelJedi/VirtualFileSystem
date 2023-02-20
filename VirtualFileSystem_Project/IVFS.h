@@ -4,40 +4,54 @@
 #include <fstream>
 #include <map>
 
+/* ---Commmon--------------------------------------------------------------- */
+
+#define BYTE		8
+#define BLOCK		1024			// Reserved per block, bytes
+#define CLUSTER		16				// Default blocks estimated per file
+#define ADDR		4				// Address length, bytes
+#define DISKDATA	ADDR*4			// Reserved for disk info, bytes
+#define NODEDATA	64				// Reserved per node, bytes
+// todo: think of better const handling
+
 /* ---File------------------------------------------------------------------ */
 
 /// <summary>
-/// The complex pointer used for locating file datablocks on VDisk
+/// The complex pointer used for locating file datablocks on VDisk.
+/// On VDisk File is represented by node in node area and by data blocks in data area.
 /// </summary>
 struct File
 {
 private:
 
 	uint32_t _nodeAddr;			// Unmutable
-	uint32_t _totalSize;		// Unmutable
-	std::string _name;			// TBD
-	size_t _rptr;				// Next unread byte of data
+	uint64_t _realSize;
+	std::string _name;
 
 public:
+
 	enum class Sections
 	{
-		nextTB,
-		sizeVal,
-		readPtr,
-		firstDataAddr
+		nextTB,			// Address of the next title block, if such exists; address of the current block otherwise
+		sizeVal,		// Real size of the file (not takes into account reserved space)
+		firstDataAddr	// Address of the first data block
 	};
-	static std::map<Sections, uint32_t> info;	// Offsets in bytes for data sections
+	static std::map<Sections, uint32_t> infoAddr;	// Offsets in bytes for data sections
 
-	std::vector<uint32_t> blocks;
+	std::vector<uint32_t> blocks;					// Remember: addresses are ADDR length
 
-	uint32_t GetNode() { return _nodeAddr; };
-	uint32_t GetAddr() { return *blocks.begin(); };
-	uint32_t GetSize() { return _totalSize; };
-	std::string GetName() { return _name; };
+	uint32_t GetNode() const { return _nodeAddr; };
+	uint32_t GetAddr() const { return *blocks.begin(); };
+	uint64_t GetSize() const { return _realSize; };
+	uint32_t SetSize(uint64_t value) { _realSize = value; };
+	std::string GetName() const { return _name; };
 	std::string SetName(std::string value) { _name = value; };
 
-	char* ReadNext();
-	size_t WriteData(char * data);
+	///
+	/// <returns>Number of the next empty byte from the last block's beginning</returns>
+	uint64_t ReadPtr() const;
+	char* ReadNext();				// TBD
+	size_t WriteData(char * data);	// TBD
 
 	File() = delete;
 	File(uint32_t nodeAddr, uint32_t blockAddr, std::string name);
@@ -54,13 +68,6 @@ public:
 class VDisk
 {
 private:
-	// todo: replace the temporary const handling
-	#define BYTE		8
-	#define BLOCK		1024			// Reserved per block, bytes
-	#define CLUSTER		16				// Default blocks estimated per file
-	#define ADDR		4				// Address length, bytes
-	#define DISKDATA	ADDR*4			// Reserved for disk info, bytes
-	#define NODEDATA	64				// Reserved per node, bytes
 
 	enum class Sections 
 	{ 
@@ -71,16 +78,7 @@ private:
 		firstNode,
 		firstBlock
 	};
-	struct SectionsClassHash
-	{
-		template <typename T>
-		std::size_t operator()(T t) const
-		{
-			return static_cast<std::size_t>(t);
-		}
-	};
-	static std::map<Sections, uint32_t> metadataAddr;	// Offsets in bytes for data sections
-
+	static std::map<Sections, uint32_t> infoAddr;	// Offsets in bytes for data sections
 
 	const std::string name;
 	const uint64_t sizeInBytes;			// The limitation is fixed and determines the number of files available
@@ -93,7 +91,8 @@ private:
 	uint32_t EstimateNodeCapacity(size_t size) const;
 	uint32_t EstimateBlockCapacity(size_t size) const;
 	uint64_t EstimateMaxSize(uint64_t size) const;
-	uint64_t GetFileSize(std::string filename) const;
+	uint64_t GetDiskSize(std::string filename) const;
+
 	bool InitDisk();
 	bool UpdateDisk();
 	char* ReadInfo(Sections info);
@@ -102,13 +101,16 @@ private:
 	bool IsEmptyNode(char* nodeValue) const;
 	char* CreateNodeAt(uint32_t freeNode, uint32_t freeBlock, const char* name, bool isDir);
 	char BuildFileMetadata(bool isDir, bool inWriteMode, short inReadMode);
+	uint64_t AbsoluteReadPtr(File* file) const;
 
 	uint32_t TakeFreeBlocks(uint32_t& nextFree);
 	void InitTitleBlock(File* file);
 
 	bool SetBytes(uint32_t position, const char* data, uint32_t length);
 	bool GetBytes(uint32_t position, char* data, uint32_t length);
+
 public:
+
 	std::fstream disk;					// Main data in/out stream
 
 	File* SeekFile(const char* name) const;
