@@ -1,6 +1,9 @@
 # VirtualFileSystem
 The **VFS** (Virtual File System) is used for managing thousands of files packed in a few physical ones, which can be useful in systems with read/write limitations. This implementation is being developed mostly for educational purposes.
 
+> :radioactive: The system is currently unstable, use it on your own risk. All recent changes commited for for informational purposes only.<br/>
+> The description below describes the general concept. If you want to check known issues, jump to the [FAQ](https://github.com/pixelJedi/VirtualFileSystem/edit/main/README.md#FAQ).
+
 Currently, the following constants are used:
 
 - `BYTE` = 8 bits;
@@ -28,6 +31,7 @@ Each VFS can manage multiple VDisks (each is a file that represents a separate f
 It's possible to mount and unmount VDisks by providing names of corresponding files:
 - `MountOrCreate(string filename)`
 - `Unmount(string filename)`
+- todo: `ResetAndMount` - to reuse the filename
 
 ## VDisk
 
@@ -62,6 +66,15 @@ The VDisk consists of 3 main data sections:
 		- First block of the file is a Title block that stores name and block adresses of the file. Additional title blocks can be provided;
 	- Each CLUSTER is a fixed number of blocks. A whole cluster is reserved per file even if less space is actually required.
 
+### Getting and setting data
+Two low-lever functions are responsible for the trick:
+
+- `GetBytes(size_t position, const char* data, size_t length)`
+- `SetBytes(size_t position, const char* data, size_t length)`
+
+They use `seekg` and `seekp` pointers of the VDisk's fstream to get or owerwrite `data` of `length` starting from `position` in the file.
+They're not const as changing pointers changes the fstream obj.
+
 ## File
 
 Physically, a File is stored in blocks on VDisk. Nodes are used to address the first block of the File.
@@ -87,3 +100,6 @@ Title blocks [TB] are made this way:
 
 Data block stores binary data.
 When a new block is required, the VDisk checks for available blocks and allocates a new cluster to the file.
+
+### FAQ
+
