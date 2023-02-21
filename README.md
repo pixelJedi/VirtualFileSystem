@@ -102,4 +102,32 @@ Data block stores binary data.
 When a new block is required, the VDisk checks for available blocks and allocates a new cluster to the file.
 
 ### FAQ
+> **1. Can I read, write, open or create files using your VFS?**
 
+Well, you can't yet. Basically, you can create a file without checking its existence, but I wouldn't recommend it until I finish the debugging.
+
+> **2. Why do you show us such a raw code? **
+
+It's mainly to demonstrate the concept. Anyway, I'll continue working, check the updates.
+
+> **3. What was the main problem with the system, why you didn't finish??**
+
+The main reason is lack of time and skill, as always are. I've overestimated my programming skills; the overall idea of VFS was clear, but I've drowned in low-level syntax debugging. Also I work and study full-time, but I think the skill issue here is the main one.
+
+> **4. Okay, can I do something with VFS? **
+
+Oh yeah! You can mount and unmount VDisks, the VFS will even initialize it. You also can Create a File in a new VFS and see values popping in a hex editor. Pretty inspiring to see it working, y'know.
+
+> **5. What about multithreading? **
+
+I was planning to make this work using mutexes to prevent working with outdated data. I'm rather new to it, so maybe I'll learn a more effective way (I've heard mutex causes system calls which slow down the process).
+Nodes of the files store the flags on reading and writing - a mutex should check it before opening a File.
+Also the threads may change the DiskData - there should also be mutex, guarding the collisions.
+
+> **6. What was this about learning? Didn't you know what are you working with? **
+
+Honestly, I've learned and updated a ton of things. I didn't use C++ since university so I've read a lot about working with pointers, mutexes, their different kinds, streams (expecially file streams), some syntax sugar of C++, etc., but I still have much to learn, and of course I have to train.
+I know other languages, but this task is still more complex than I usually do.
+Plus, I've refreshed my understanding of file systems, learned working with Github and writing READMEs.
+
+Anyway, thank you for watching! That task was fun.
