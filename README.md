@@ -46,7 +46,7 @@ The VDisk consists of 3 main data sections:
 	- `Free Nodes`: 	the number of new files/directory that can be created on VDisk (each Node represents a file or directory);
 	- `Free Blocks`: 	how many data blocks the VDisk is ready to allocate;
 	- `Max Node`: 		the limit on nodes is estimated during the initialization (~16 Kbytes per file estimated);
-	- `Next Free Block`:	the design assumes that data is written to sequential blocks where possible, so that the variable here stores the address of the next free cluster (or block if clusters are unavailable).
+	- `Next Free Block`:	the design assumes that data is written to sequential blocks where possible, so that variable can speed up memory allocation. It equals the relative address of 1st free block (or even cluster).
 2. **Node Data**. Saves the file hierarchy, address of title block and manages access. Each node represents a relation:
 	- `Node Code`:		a numeric value in address format, represents a "parent";
 	- `Metadata` bitset [8 bits]:

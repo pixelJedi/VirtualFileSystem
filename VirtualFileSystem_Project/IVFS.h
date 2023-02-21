@@ -24,21 +24,21 @@ struct File
 {
 private:
 
-	uint32_t _nodeAddr;			// Unmutable
-	uint64_t _realSize;
 	std::string _name;
+	uint32_t _nodeAddr;			// Unmutable
+	uint64_t _realSize;			// Changed after writing, used for calculating position for write data
 
 public:
 
-	enum class Sections
-	{
-		nextTB,			// Address of the next title block, if such exists; address of the current block otherwise
-		sizeVal,		// Real size of the file (not takes into account reserved space)
-		firstDataAddr	// Address of the first data block
-	};
-	static std::map<Sections, uint32_t> infoAddr;	// Offsets in bytes for data sections
+	std::vector<uint32_t> blocks;				// Remember: addresses are ADDR length
 
-	std::vector<uint32_t> blocks;					// Remember: addresses are ADDR length
+	enum class Sect
+	{
+		nextTB,		// Address of the next title block, if such exists; address of the current block otherwise
+		sizeVal,	// Real size of the file (not takes into account reserved space)
+		firstAddr	// Address of the first data block
+	};
+	static std::map<Sect, uint32_t> infoAddr;	// Offsets in bytes for data sections
 
 	uint32_t GetNode() const { return _nodeAddr; };
 	uint32_t GetAddr() const { return *blocks.begin(); };
@@ -47,15 +47,15 @@ public:
 	std::string GetName() const { return _name; };
 	std::string SetName(std::string value) { _name = value; };
 
-	///
-	/// <returns>Number of the next empty byte from the last block's beginning</returns>
-	uint64_t ReadPtr() const;
-	char* ReadNext();				// TBD
-	size_t WriteData(char * data);	// TBD
+	bool IsBusy();						// TBD
+	bool IsWriteMode();					// TBD
+
+	uint64_t WritePtr() const;
+	size_t ReadNext(char* buffer);	// TBD
+	size_t WriteData(char * buffer);		// TBD
 
 	File() = delete;
 	File(uint32_t nodeAddr, uint32_t blockAddr, std::string name);
-	~File();
 };
 
 /* ---VDisk----------------------------------------------------------------- */
@@ -63,13 +63,16 @@ public:
 /// <summary>
 /// VDisk emulates a physical storage within a physical file and is responsible for low-level data management.
 /// Basically, VDisk is only intended to be used internally by the VFS class.
+/// The data is reached through the fstream 'disk'; it's generally open while VDisk exists.
 /// <para> For the details on the file format, see the README.md </para>
 /// </summary>
 class VDisk
 {
 private:
 
-	enum class Sections 
+	std::fstream disk;							// Main data in/out stream
+
+	enum class Sect 
 	{ 
 		freeNodes,
 		freeBlocks, 
@@ -78,60 +81,58 @@ private:
 		firstNode,
 		firstBlock
 	};
-	static std::map<Sections, uint32_t> infoAddr;	// Offsets in bytes for data sections
+	static std::map<Sect, uint32_t> infoAddr;	// Offsets in bytes for data sections
 
 	const std::string name;
-	const uint64_t sizeInBytes;			// The limitation is fixed and determines the number of files available
-	const uint32_t maxNode;				// The number of files that can be stored
-	const uint32_t maxBlock;			// The memory is allocated by Blocks
+	const uint64_t sizeInBytes;
+	const uint32_t maxNode;						// The limit on files
+	const uint32_t maxBlock;					// The limit on blocks
 	uint32_t freeNodes;
 	uint32_t freeBlocks;
-	uint32_t nextFree;					// For fast write access
+	uint32_t nextFreeBlock;
 
 	uint32_t EstimateNodeCapacity(size_t size) const;
 	uint32_t EstimateBlockCapacity(size_t size) const;
-	uint64_t EstimateMaxSize(uint64_t size) const;
-	uint64_t GetDiskSize(std::string filename) const;
+	uint64_t EstimateMaxSize(uint64_t size) const;		// User's size is truncated so that all blocks are of BLOCK size
+	uint64_t GetDiskSize(std::string filename) const;	// Check real size of an existing file
+	bool InitDisk();									// Format new VDisk
+	bool UpdateDisk();									// Write data into the associated file
+	char* ReadInfo(Sect info);							// Get raw data from a specific Section
 
-	bool InitDisk();
-	bool UpdateDisk();
-	char* ReadInfo(Sections info);
-
-	uint32_t GetFreeNode();
-	bool IsEmptyNode(char* nodeValue) const;
-	char* CreateNodeAt(uint32_t freeNode, uint32_t freeBlock, const char* name, bool isDir);
-	char BuildFileMetadata(bool isDir, bool inWriteMode, short inReadMode);
-	uint64_t AbsoluteReadPtr(File* file) const;
-
-	uint32_t TakeFreeBlocks(uint32_t& nextFree);
+	uint32_t TakeFreeNode();
+	uint32_t TakeFreeBlocks();
+	bool IsEmptyNode(short index);
+	char* BuildNode(uint32_t nodeCode, uint32_t blockAddr, const char* name, bool isDir);
+	char BuildFileMeta(bool isDir, bool inWriteMode, short inReadMode);
 	void InitTitleBlock(File* file);
 
-	bool SetBytes(uint32_t position, const char* data, uint32_t length);
-	bool GetBytes(uint32_t position, char* data, uint32_t length);
+	uint64_t GetAbsoluteAddr(uint32_t blockAddr, uint32_t offset) const;
+
+	bool SetBytes(uint32_t position, const char* data, uint32_t length);	// Low-level writing
+	bool GetBytes(uint32_t position, char* data, uint32_t length);			// Low-level reading
 
 public:
 
-	std::fstream disk;					// Main data in/out stream
-
-	File* SeekFile(const char* name) const;
-	File* Fmalloc(const char* name);
+	std::string GetName() const { return name; };
+	uint64_t GetSizeInBytes() const{ return sizeInBytes; };
+	uint32_t GetBlocksLeft() const { return freeBlocks;	};
 
 	std::string PrintSpaceLeft() const;
-	uint32_t BlocksLeft() const;
-	uint64_t GetSizeInBytes() const;
-	std::string GetName() const;
+
+	File* SeekFile(const char* name) const;
+	File* FMalloc(const char* name);						// Reserves space for a new file
 
 	VDisk() = delete;
-	VDisk(const std::string fileName);							// Open existing VDisk
-	VDisk(const std::string fileName, const uint64_t size);		// Create new VDisk
+	VDisk(const std::string fileName);						// Open existing VDisk
+	VDisk(const std::string fileName, const uint64_t size);	// Create new VDisk
 	~VDisk();
 };
 
 /* ---VFS------------------------------------------------------------------- */
 
 /// <summary>
-/// The original task requires the implementation of this interface.
-/// See the VFS child class code for the implementation itself.
+/// The original task requires using this interface.
+/// See the VFS child class for the implementation.
 /// </summary>
 struct IVFS
 {
@@ -155,11 +156,11 @@ public:
 	bool MountOrCreate(std::string& diskName);
 	bool Unmount(const std::string& diskName);
 
-	File* Open(const char* name) override;
-	File* Create(const char* name) override;
-	size_t Read(File* f, char* buff, size_t len) override;
-	size_t Write(File* f, char* buff, size_t len) override;
-	void Close(File* f) override;
+	File* Open(const char* name) override;					// TBD
+	File* Create(const char* name) override;				// TBD
+	size_t Read(File* f, char* buff, size_t len) override;	// TBD
+	size_t Write(File* f, char* buff, size_t len) override;	// TBD
+	void Close(File* f) override;							// TBD
 
 	VFS();
 	~VFS();
@@ -170,7 +171,7 @@ public:
 void FillWithZeros(std::fstream& fs, size_t size);
 char* OpenAndReadInfo(std::string filename, uint32_t position, const uint32_t length);
 
-template<typename T> char* DataToChar(const T& data);
-char* DataToChar(const std::string data);
+template<typename T> char* IntToChar(const T& data);
+char* StrToChar(const std::string data);
 
 uint32_t CharToInt32(const char* bytes);
