@@ -2,7 +2,7 @@
 The **VFS** (Virtual File System) is used for managing thousands of files packed in a few physical ones, which can be useful in systems with read/write limitations. This implementation is being developed mostly for educational purposes.
 
 > :radioactive: The system is currently unstable, use it on your own risk. All recent changes commited for for informational purposes only.<br/>
-> The description below describes the general concept. If you want to check known issues, jump to the [FAQ](https://github.com/pixelJedi/VirtualFileSystem/edit/main/README.md#FAQ).
+> The description below describes the general concept. If you want to check known issues, jump to the [FAQ](https://github.com/pixelJedi/VirtualFileSystem#faq).
 
 Currently, the following constants are used:
 
