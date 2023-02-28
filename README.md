@@ -54,7 +54,7 @@ The VDisk consists of 3 main data sections:
 2. **Node Data**. Saves the file hierarchy, address of title block and manages access. Each node represents a relation:
 	- `Node Code`:		a numeric value in address format, represents a "parent";
 	- `Metadata` bitset [8 bits]:
-		- [1] folder (0) or file (1)
+		- [1] folder (1) or file (0)
 		- [2] ---
 		- [1] writeonly flag
 		- [4] readonly counter (multiple threads can read the same file)

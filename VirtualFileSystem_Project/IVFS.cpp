@@ -210,18 +210,22 @@ char* VDisk::BuildNode(uint32_t nodeCode, uint32_t blockAddr, const char* name, 
 	{
 		char* newNode = new char[NODEDATA];
 		short ibyte = 0;
-	// Node code
-		for (; ibyte < ADDR; ++ibyte)					
+		// Node code
+		for (; ibyte < ADDR; ++ibyte)
 			newNode[ibyte] = IntToChar(nodeCode)[ibyte];
-	// Metadata
+		// Metadata
 		newNode[ibyte++] = BuildFileMeta(isDir, 0, 0);
-	// Name
-		for (; ibyte < (NODEDATA-2*ADDR-1); ++ibyte)
-			newNode[ibyte] = name[ibyte];
-	// File address
+		// Name
+		for (; ibyte < (NODEDATA - 2 * ADDR - 1); ++ibyte)
+		{
+			newNode[ibyte] = name[ibyte-ADDR-1];
+
+			std::bitset<8>bb(newNode[ibyte]);
+			std::cout << bb.to_string() << " ";
+		}
+		// File address
 		for (; ibyte < ADDR; ++ibyte)					
 			newNode[ibyte] = IntToChar(blockAddr)[ibyte];
-		std::cout << std::to_string(*newNode);
 		return newNode;
 	} 
 	catch(...)
@@ -234,7 +238,6 @@ char VDisk::BuildFileMeta(bool isDir, bool inWriteMode, short inReadMode)
 	std::bitset<8> metabitset(inReadMode);
 	if (isDir) metabitset.set(7);
 	if (inWriteMode) metabitset.set(4);
-
 	return static_cast<char>(metabitset.to_ulong());
 }
 void VDisk::InitTitleBlock(File* file)
@@ -382,21 +385,23 @@ bool VFS::MountOrCreate(std::string& diskName)
 	{
 		if (!std::filesystem::exists(diskName))
 		{
-			char answer;
+			char answer = 'y';
+			//char answer;
 			std::cout << "\"" << diskName << "\" doesn't exist. Create? y/n\n> ";
-			std::cin >> answer;
-			std::cin.ignore(UINT32_MAX, '\n');
-				std::cin.clear();
+			//std::cin >> answer;
+			//std::cin.ignore(UINT32_MAX, '\n');
+			//	std::cin.clear();
 			switch (answer)
 			{
 			case 'Y':
 			case 'y':
 			{
-				size_t diskSize = 0;
+				size_t diskSize = 25000;
+				//size_t diskSize = 0;
 				std::cout << "Specify size for disk \"" + diskName + "\", bytes (minimum " + std::to_string(DISKDATA + NODEDATA + CLUSTER*BLOCK) + " B)\n> ";
-				std::cin >> diskSize;
-				std::cin.ignore(UINT32_MAX, '\n');
-				std::cin.clear();
+				//std::cin >> diskSize;
+				//std::cin.ignore(UINT32_MAX, '\n');
+				//std::cin.clear();
 				if (IsValidSize(diskSize))
 				{
 					VDisk* vd = new VDisk(diskName, diskSize);
