@@ -174,6 +174,9 @@ uint32_t VDisk::TakeFreeNode()
 	if (freeNodes)
 	{
 		for (uint32_t i = 0; i <= maxNode; ++i)
+			// Optimization candidate: search for a free node
+			// - start looking from last filled node
+			// - store bitmap of used nodes
 			if (IsEmptyNode(i))
 			{
 				--freeNodes;
@@ -198,11 +201,9 @@ uint32_t VDisk::TakeFreeBlocks()
 }
 bool VDisk::IsEmptyNode(short index)
 {
-	char* nodeValue = new char[NODEDATA];
-	GetBytes(infoAddr[Sect::firstNode] + index*NODEDATA, nodeValue, NODEDATA);
-	for (short i = 0; i != NODEDATA; ++i)
-		if (nodeValue[i] != char(0)) return false;
-	return true;
+	char* nodeValue = new char;	// Checking if name is empty
+	GetBytes(infoAddr[Sect::firstNode] + index*NODEDATA, nodeValue, 1);
+	return *nodeValue == char(0);
 }
 char* VDisk::BuildNode(uint32_t nodeCode, uint32_t blockAddr, const char* name, bool isDir)
 {
@@ -217,12 +218,7 @@ char* VDisk::BuildNode(uint32_t nodeCode, uint32_t blockAddr, const char* name, 
 		newNode[ibyte++] = BuildFileMeta(isDir, 0, 0);
 		// Name
 		for (; ibyte < (NODEDATA - 2 * ADDR - 1); ++ibyte)
-		{
 			newNode[ibyte] = name[ibyte-ADDR-1];
-
-			std::bitset<8>bb(newNode[ibyte]);
-			std::cout << bb.to_string() << " ";
-		}
 		// File address
 		for (; ibyte < ADDR; ++ibyte)					
 			newNode[ibyte] = IntToChar(blockAddr)[ibyte];
@@ -345,6 +341,7 @@ VDisk::VDisk(const std::string fileName):
 	maxBlock(EstimateBlockCapacity(sizeInBytes))
 {
 	std::cout << "Disk \"" << name << "\" opened\n";
+	
 	disk.open(fileName, std::fstream::in | std::ios::out | std::fstream::binary);
 	freeNodes = CharToInt32(ReadInfo(Sect::freeNodes));
 	freeBlocks = CharToInt32(ReadInfo(Sect::freeBlocks));
@@ -358,6 +355,7 @@ VDisk::VDisk(const std::string fileName, const uint64_t size) :
 	sizeInBytes(EstimateMaxSize(size))
 {
 	std::cout << "Disk \"" << name << "\" created\n";
+	
 	disk.open(fileName, std::fstream::in | std::fstream::out | std::fstream::binary | std::fstream::trunc);
 	infoAddr[Sect::firstBlock] = DISKDATA + maxNode * NODEDATA;
 	if (!InitDisk())
@@ -385,23 +383,21 @@ bool VFS::MountOrCreate(std::string& diskName)
 	{
 		if (!std::filesystem::exists(diskName))
 		{
-			char answer = 'y';
-			//char answer;
+			char answer;
 			std::cout << "\"" << diskName << "\" doesn't exist. Create? y/n\n> ";
-			//std::cin >> answer;
-			//std::cin.ignore(UINT32_MAX, '\n');
-			//	std::cin.clear();
+			std::cin >> answer;
+			std::cin.ignore(UINT32_MAX, '\n');
+			std::cin.clear();
 			switch (answer)
 			{
 			case 'Y':
 			case 'y':
 			{
-				size_t diskSize = 25000;
-				//size_t diskSize = 0;
-				std::cout << "Specify size for disk \"" + diskName + "\", bytes (minimum " + std::to_string(DISKDATA + NODEDATA + CLUSTER*BLOCK) + " B)\n> ";
-				//std::cin >> diskSize;
-				//std::cin.ignore(UINT32_MAX, '\n');
-				//std::cin.clear();
+				size_t diskSize = 0;
+				std::cout << "Specify size of disk \"" + diskName + "\", bytes (minimum " + std::to_string(DISKDATA + NODEDATA + CLUSTER*BLOCK) + " B)\n> ";
+				std::cin >> diskSize;
+				std::cin.ignore(UINT32_MAX, '\n');
+				std::cin.clear();
 				if (IsValidSize(diskSize))
 				{
 					VDisk* vd = new VDisk(diskName, diskSize);

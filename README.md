@@ -58,7 +58,7 @@ The VDisk consists of 3 main data sections:
 		- [2] ---
 		- [1] writeonly flag
 		- [4] readonly counter (multiple threads can read the same file)
-	- `File Name`:		filename of a child;
+	- `File Name`:		filename of a child. Starts with \0 when node is empty;
 	- `File Address`:	if child is a dir, stores the child's node code, else the file title block's address.
 3. **Block Data**. 
 	- Each BLOCK is a fixed number of bytes;
