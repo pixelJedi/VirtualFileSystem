@@ -105,20 +105,21 @@ uint64_t VDisk::GetDiskSize(std::string filename) const
 	std::ifstream in(filename, std::ifstream::ate | std::ifstream::binary);
 	return in.tellg();
 }
-Node* VDisk::LoadHierarchy(uint32_t start_index)
+Vertice<Node>* VDisk::LoadHierarchy(uint32_t start_index)
 {
-	Node* root = nullptr;
+	Vertice<Node>* root = nullptr;
 	uint32_t curr_nc = GetNodeCode(start_index);
 	for (uint32_t addr = infoAddr[Sect::firstNode]+ start_index * NODEDATA; addr != infoAddr[Sect::firstBlock]; addr = addr + NODEDATA)
 	{
 		if (curr_nc != GetNodeCode(addr)) return root;
-		root = new Node();
+		root = new Vertice<Node>();
 		char name[NODENAME];
 		GetBytes(addr + infoAddr[Sect::nofs_name], name, NODENAME);
-		root->Add(std::string{name},addr);
+		Node* node = IsFileNode(addr) ? nullptr/*new File()*/ : new Node();
+		//root->Add(std::string{name}, node);
 		if (!IsFileNode(addr))
 		{
-			root->BindNewTreeToChild(name, LoadHierarchy(GetChildAddr(addr)));
+		//	root->BindNewTreeToChild(name, LoadHierarchy(GetChildAddr(addr)));
 		}
 	}
 	return root;
@@ -198,19 +199,9 @@ char* VDisk::ReadInfo(VDisk::Sect info)
 /// <returns>The node code</returns>
 uint32_t VDisk::TakeFreeNode()
 {
-	if (freeNodes)
-	{
-		for (uint32_t i = 0; i <= maxNode; ++i)
-			// Optimization candidate: search for a free node
-			// - start looking from last filled node
-			// - store bitmap of used nodes
-			if (IsEmptyNode(i))
-			{
-				--freeNodes;
-				return i;
-			}
-	}
-	return UINT32_MAX;
+	if (!freeNodes) throw std::logic_error("Failed to find a free node");
+	--freeNodes;
+	return maxNode-(freeNodes+1);
 }
 /// <summary>
 /// Checks for blocks availability and updates FreeBlocks counter
@@ -218,11 +209,11 @@ uint32_t VDisk::TakeFreeNode()
 /// <returns>Address of the first allocated block</returns>
 uint32_t VDisk::TakeFreeBlocks()
 {
-	if (!freeBlocks) return UINT32_MAX;
+	if (!freeBlocks) throw std::logic_error("Failed to get a free block");
 // todo: implement proper tracking of busy block, e.g. through bitmap
 	uint32_t curFree = nextFreeBlock;	
 // todo: allow to 1) allocate less than a cluster, and 2) non-neighbour blocks
-	nextFreeBlock = (nextFreeBlock + CLUSTER) > maxBlock ? UINT32_MAX : nextFreeBlock + CLUSTER; 
+	nextFreeBlock = (nextFreeBlock + CLUSTER) > maxBlock ? throw std::logic_error("Failed to get a full cluster") : nextFreeBlock + CLUSTER;
 	freeBlocks -= CLUSTER;
 	return curFree;
 }
@@ -286,12 +277,12 @@ void VDisk::InitTitleBlock(File* file)
 	// todo: move the writing to the UpdateDisk, build data charset here
 	char* data = new char[BLOCK];
 
-	SetBytes(file->GetAddr() + File::infoAddr[File::Sect::nextTB], IntToChar(file->GetAddr()), ADDR);
-	SetBytes(file->GetAddr() + File::infoAddr[File::Sect::sizeVal], IntToChar(file->GetSize()), 2 * ADDR);
+	SetBytes(file->GetData() + File::infoAddr[File::Sect::nextTB], IntToChar(file->GetData()), ADDR);
+	SetBytes(file->GetData() + File::infoAddr[File::Sect::sizeVal], IntToChar(file->GetSize()), 2 * ADDR);
 
 	uint64_t totalBlocks = file->blocks.size();
 	for (int i = 0; i < totalBlocks; ++i)
-		SetBytes(GetAbsoluteAddrInBlock(file->GetAddr(),File::infoAddr[File::Sect::firstAddr] + i * ADDR), IntToChar(file->blocks[i]), ADDR);
+		SetBytes(GetAbsoluteAddrInBlock(file->GetData(),File::infoAddr[File::Sect::firstAddr] + i * ADDR), IntToChar(file->blocks[i]), ADDR);
 	delete[] data;
 }
 /// <summary>
@@ -356,27 +347,21 @@ File* VDisk::SeekFile(const char* name) const
 /// </summary>
 File* VDisk::FMalloc(const char* name)
 {
-	if (!freeNodes) return nullptr;
-
-	uint32_t freeNode = TakeFreeNode();
-	if (freeNode == UINT32_MAX)
+	try
 	{
-		std::cout << "Failed to find a free node\n";
-		return nullptr;
-	}   
-
-	uint32_t freeBlock = TakeFreeBlocks();
-	if (freeBlock == UINT32_MAX)
+		uint32_t freeNode = TakeFreeNode();
+		uint32_t freeBlock = TakeFreeBlocks();
+		File* f = new File(freeNode, freeBlock, name);
+		SetBytes(infoAddr[Sect::firstNode] + freeNode, BuildNode(freeNode, freeBlock, name, 0), NODEDATA);
+		InitTitleBlock(f);
+		UpdateDisk();
+		return f;
+	}
+	catch (std::logic_error& e)
 	{
-		std::cout << "Failed to get a free block\n";
+		std::cout << e.what();
 		return nullptr;
 	}
-
-	File* f = new File(freeNode, freeBlock, name);
-	SetBytes(infoAddr[Sect::firstNode] + freeNode, BuildNode(freeNode, freeBlock, name, 0), NODEDATA);
-	InitTitleBlock(f);
-	UpdateDisk();
-	return f;
 }
 /// Loading existing disk 
 VDisk::VDisk(const std::string fileName):
@@ -404,7 +389,7 @@ VDisk::VDisk(const std::string fileName, const uint64_t size) :
 	std::cout << "Disk \"" << name << "\" created\n";
 	
 	disk.open(fileName, std::fstream::in | std::fstream::out | std::fstream::binary | std::fstream::trunc);
-	root = new Node();
+	root = new Vertice<Node>();
 	infoAddr[Sect::firstBlock] = DISKDATA + maxNode * NODEDATA;
 	if (!InitDisk())
 		std::cout << "Init failed!\n";
@@ -609,4 +594,18 @@ char* OpenAndReadInfo(std::string filename, uint32_t position, const uint32_t le
 	is.close();
 
 	return data;
+}
+
+void PrintVerticeTree(Vertice<Node>* v, uint32_t count)
+{
+	/*if (!_children.empty())
+	{
+		for (auto iter = _children.begin(); iter != _children.end(); ++iter)
+		{
+			for (uint32_t i = 0; i != count; ++i) std::cout << "  ";
+			std::cout << (*iter).first << " " << (*iter).second.first << "\n";
+			if (!((*iter).second.second->_children.empty())) (*iter).second.second->Print(count + 1);
+		}
+	}*/
+	// idea: hide tiers if they do not fit into the screen "dirname (+1 children)" 
 }

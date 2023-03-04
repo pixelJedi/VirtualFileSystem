@@ -3,7 +3,7 @@
 #include <vector>
 #include <fstream>
 #include <map>
-#include "Node.h"
+#include "Vertice.h"
 
 /* ---Commmon--------------------------------------------------------------- */
 
@@ -19,11 +19,15 @@
 
 /* ---File------------------------------------------------------------------ */
 
+struct Node
+{
+
+};
 /// <summary>
 /// The complex pointer used for locating file datablocks on VDisk.
 /// On VDisk File is represented by node in node area and by data blocks in data area.
 /// </summary>
-struct File
+struct File : Node
 {
 private:
 
@@ -44,7 +48,7 @@ public:
 	static std::map<Sect, uint32_t> infoAddr;	// Offsets in bytes for data sections
 
 	uint32_t GetNode() const { return _nodeAddr; };
-	uint32_t GetAddr() const { return *blocks.begin(); };
+	uint32_t GetData() const { return *blocks.begin(); };
 	uint64_t GetSize() const { return _realSize; };
 	uint32_t SetSize(uint64_t value) { _realSize = value; };
 	std::string GetName() const { return _name; };
@@ -74,7 +78,7 @@ class VDisk
 private:
 
 	std::fstream disk;							// Main data in/out stream
-	Node* root;
+	Vertice<Node>* root;
 
 	enum class Sect 
 	{ 
@@ -104,7 +108,7 @@ private:
 	uint32_t EstimateBlockCapacity(size_t size) const;
 	uint64_t EstimateMaxSize(uint64_t size) const;		// User's size is truncated so that all blocks are of BLOCK size
 	uint64_t GetDiskSize(std::string filename) const;	// Check real size of an existing file
-	Node* LoadHierarchy(uint32_t start_index = 0);
+	Vertice<Node>* LoadHierarchy(uint32_t start_index = 0);
 	void WriteHierarchy();
 	bool InitDisk();									// Format new VDisk
 	bool UpdateDisk();									// Write data into the associated file
@@ -128,7 +132,6 @@ private:
 	bool GetBytes(uint32_t position, char* data, uint32_t length);			// Low-level reading
 
 public:
-
 	std::string GetName() const { return name; };
 	uint64_t GetSizeInBytes() const{ return sizeInBytes; };
 	uint32_t GetBlocksLeft() const { return freeBlocks;	};
@@ -191,3 +194,5 @@ template<typename T> char* IntToChar(const T& data);
 char* StrToChar(const std::string data);
 
 uint32_t CharToInt32(const char* bytes);
+
+void PrintVerticeTree(Vertice<Node>* v, uint32_t count = 0);

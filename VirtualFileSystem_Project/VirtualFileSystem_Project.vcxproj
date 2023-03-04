@@ -129,12 +129,12 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="IVFS.cpp" />
-    <ClCompile Include="Node.cpp" />
+    <ClCompile Include="Vertice.cpp" />
     <ClCompile Include="VirtualFileSystem_Project.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="IVFS.h" />
-    <ClInclude Include="Node.h" />
+    <ClInclude Include="Vertice.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
