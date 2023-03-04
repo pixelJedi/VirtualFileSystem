@@ -42,6 +42,16 @@ uint32_t Node::GetAddr(std::string_view name)
 	}
 }
 
+uint32_t Node::Count()
+{
+	uint32_t count = _children.size();
+	for (auto iter = _children.begin(); iter != _children.end(); ++iter)
+	{
+		count += (*iter).second.second->Count();
+	}
+	return count;
+}
+
 void Node::BindNewTreeToChild(const std::string& name, Node* nodePtr)
 {
 	_children[name].second->Destroy();

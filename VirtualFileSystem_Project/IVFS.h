@@ -105,6 +105,7 @@ private:
 	uint64_t EstimateMaxSize(uint64_t size) const;		// User's size is truncated so that all blocks are of BLOCK size
 	uint64_t GetDiskSize(std::string filename) const;	// Check real size of an existing file
 	Node* LoadHierarchy(uint32_t start_index = 0);
+	void WriteHierarchy();
 	bool InitDisk();									// Format new VDisk
 	bool UpdateDisk();									// Write data into the associated file
 	char* ReadInfo(Sect info);							// Get raw data from a specific Section

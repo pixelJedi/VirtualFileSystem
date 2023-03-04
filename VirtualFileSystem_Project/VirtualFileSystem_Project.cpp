@@ -9,15 +9,7 @@
 using namespace std;
 
 int main()
-{
-	Node* root = new Node();
-	root->Add("mike\\jake\\cook\\lochness", 123);
-	root->Add("mike\\jake\\cook\\loch", 333);
-	root->Add("mike\\boob\\cook\\loch", 444);
-	root->Add("helen\\goo", 155523);
-	root->Print();
-
-	/*
+{	
 	// Testing VFS
 	string disk = "test.tfs";
 	size_t size = 1024 * 1024;	// 1 Mb
@@ -31,7 +23,7 @@ int main()
 	vfs->Unmount(disk);
 
 	delete[] file;
-	delete vfs;*/
+	delete vfs;/**/
 
 	// Measuring time:
 	//clock_t tStart = clock();

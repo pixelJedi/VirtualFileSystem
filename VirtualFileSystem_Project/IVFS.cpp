@@ -112,6 +112,7 @@ Node* VDisk::LoadHierarchy(uint32_t start_index)
 	for (uint32_t addr = infoAddr[Sect::firstNode]+ start_index * NODEDATA; addr != infoAddr[Sect::firstBlock]; addr = addr + NODEDATA)
 	{
 		if (curr_nc != GetNodeCode(addr)) return root;
+		root = new Node();
 		char name[NODENAME];
 		GetBytes(addr + infoAddr[Sect::nofs_name], name, NODENAME);
 		root->Add(std::string{name},addr);
@@ -121,6 +122,10 @@ Node* VDisk::LoadHierarchy(uint32_t start_index)
 		}
 	}
 	return root;
+}
+void VDisk::WriteHierarchy()
+{
+	// TBD: Node tree to linear node sector
 }
 /// <summary>
 /// Sets the file that hasn't been used yet
