@@ -18,7 +18,6 @@ public:
 	uint32_t Count();
 };
 
-
 template <typename T>
 void Vertice<T>::Add(std::string_view path, T* data)
 {
@@ -60,8 +59,7 @@ T* Vertice<T>::GetData(std::string_view path)
 		return _children[head].first;
 }
 
-template <typename T>
-uint32_t Vertice<T>::Count()
+template <typename T> uint32_t Vertice<T>::Count()
 {
 	uint32_t count = _children.size();
 	for (auto iter = _children.begin(); iter != _children.end(); ++iter)
@@ -71,8 +69,7 @@ uint32_t Vertice<T>::Count()
 	return count;
 }
 
-template <typename T>
-void Vertice<T>::BindNewTreeToChild(const std::string& name, Vertice* nodePtr, bool deleteData)
+template <typename T>void Vertice<T>::BindNewTreeToChild(const std::string& name, Vertice<T>* nodePtr, bool deleteData)
 {
 	if (deleteData) _children[name].second->Destroy();
 	_children[name].second = nodePtr;

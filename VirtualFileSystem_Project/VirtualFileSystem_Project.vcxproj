@@ -129,7 +129,6 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="IVFS.cpp" />
-    <ClCompile Include="Vertice.cpp" />
     <ClCompile Include="VirtualFileSystem_Project.cpp" />
   </ItemGroup>
   <ItemGroup>
