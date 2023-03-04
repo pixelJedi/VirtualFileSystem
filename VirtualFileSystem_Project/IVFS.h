@@ -79,7 +79,12 @@ private:
 		maxNode, 
 		nextFree,
 		firstNode,
-		firstBlock
+		firstBlock,
+
+		nofs_ncode,
+		nofs_meta,
+		nofs_name,
+		nofs_addr
 	};
 	static std::map<Sect, uint32_t> infoAddr;	// Offsets in bytes for data sections
 

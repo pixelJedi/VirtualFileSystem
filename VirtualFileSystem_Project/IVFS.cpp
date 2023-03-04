@@ -80,7 +80,11 @@ std::map<VDisk::Sect, uint32_t> VDisk::infoAddr = {
 	{Sect::freeBlocks,	1 * ADDR},
 	{Sect::maxNode,		2 * ADDR},
 	{Sect::nextFree,	3 * ADDR},
-	{Sect::firstNode,	4 * ADDR}
+	{Sect::firstNode,	4 * ADDR},
+	{Sect::nofs_ncode,	0},
+	{Sect::nofs_meta,	ADDR},
+	{Sect::nofs_name,	ADDR + 1},
+	{Sect::nofs_addr,	NODEDATA - ADDR}
 };
 
 uint32_t VDisk::EstimateNodeCapacity(size_t size) const
@@ -201,8 +205,8 @@ uint32_t VDisk::TakeFreeBlocks()
 }
 bool VDisk::IsEmptyNode(short index)
 {
-	char* nodeValue = new char;	// Checking if name is empty
-	GetBytes(infoAddr[Sect::firstNode] + index*NODEDATA, nodeValue, 1);
+	char* nodeValue = new char;	// Checking if name is null
+	GetBytes(infoAddr[Sect::firstNode] + index*NODEDATA + infoAddr[Sect::nofs_name], nodeValue, 1);
 	return *nodeValue == char(0);
 }
 char* VDisk::BuildNode(uint32_t nodeCode, uint32_t blockAddr, const char* name, bool isDir)
@@ -496,8 +500,8 @@ size_t VFS::Write(File* f, char* buff, size_t len)
 void VFS::Close(File* f)
 {
 	// todo: update read/write flags
-	delete f;
 	std::cout << "File \"" << f->GetName() << "\" closed\n";
+	delete f;
 }
 
 VFS::VFS()
