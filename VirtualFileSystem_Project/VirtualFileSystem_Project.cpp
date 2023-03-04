@@ -12,8 +12,9 @@ int main()
 {
 	Node* root = new Node();
 	root->Add("mike\\jake\\cook\\lochness", 123);
-	root->Add("mike\\jake\\cook\\loch", 123);
-	root->Add("mike\\boob\\cook\\loch", 123);
+	root->Add("mike\\jake\\cook\\loch", 333);
+	root->Add("mike\\boob\\cook\\loch", 444);
+	root->Add("helen\\goo", 155523);
 	root->Print();
 
 	/*

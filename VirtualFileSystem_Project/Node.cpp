@@ -42,6 +42,12 @@ uint32_t Node::GetAddr(std::string_view name)
 	}
 }
 
+void Node::BindNewTreeToChild(const std::string& name, Node* nodePtr)
+{
+	_children[name].second->Destroy();
+	_children[name].second = nodePtr;
+}
+
 void Node::Print(uint32_t count)
 {
 	if (!_children.empty())
@@ -49,8 +55,9 @@ void Node::Print(uint32_t count)
 		for (auto iter = _children.begin(); iter != _children.end(); ++iter)
 		{
 			for (uint32_t i = 0; i != count; ++i) std::cout << "  ";
-			std::cout << (*iter).first << "\n";
+			std::cout << (*iter).first << " " << (*iter).second.first << "\n";
 			if (!((*iter).second.second->_children.empty())) (*iter).second.second->Print(count+1);
 		}
 	}
+	// idea: hide tiers if they do not fit into the screen "dirname (+1 children)" 
 }

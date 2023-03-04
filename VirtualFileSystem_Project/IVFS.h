@@ -3,6 +3,7 @@
 #include <vector>
 #include <fstream>
 #include <map>
+#include "Node.h"
 
 /* ---Commmon--------------------------------------------------------------- */
 
@@ -11,7 +12,9 @@
 #define CLUSTER		16				// Default blocks estimated per file
 #define ADDR		4				// Address length, bytes
 #define DISKDATA	ADDR*4			// Reserved for disk info, bytes
-#define NODEDATA	64				// Reserved per node, bytes
+#define NODEDATA	64							// Reserved per node, bytes
+#define NODEMETA	1							// Reserved per node metadata, bytes
+#define NODENAME	NODEDATA-2*ADDR-NODEMETA	// Address length, bytes
 // todo: think of better const handling
 
 /* ---File------------------------------------------------------------------ */
@@ -71,6 +74,7 @@ class VDisk
 private:
 
 	std::fstream disk;							// Main data in/out stream
+	Node* root;
 
 	enum class Sect 
 	{ 
@@ -100,18 +104,24 @@ private:
 	uint32_t EstimateBlockCapacity(size_t size) const;
 	uint64_t EstimateMaxSize(uint64_t size) const;		// User's size is truncated so that all blocks are of BLOCK size
 	uint64_t GetDiskSize(std::string filename) const;	// Check real size of an existing file
+	Node* LoadHierarchy(uint32_t start_index = 0);
 	bool InitDisk();									// Format new VDisk
 	bool UpdateDisk();									// Write data into the associated file
 	char* ReadInfo(Sect info);							// Get raw data from a specific Section
 
+	bool IsEmptyNode(short index);
+	bool IsFileNode(short index);
+	uint32_t GetNodeCode(short index);
+	uint32_t GetChildAddr(short index);
+
 	uint32_t TakeFreeNode();
 	uint32_t TakeFreeBlocks();
-	bool IsEmptyNode(short index);
+
 	char* BuildNode(uint32_t nodeCode, uint32_t blockAddr, const char* name, bool isDir);
 	char BuildFileMeta(bool isDir, bool inWriteMode, short inReadMode);
 	void InitTitleBlock(File* file);
 
-	uint64_t GetAbsoluteAddr(uint32_t blockAddr, uint32_t offset) const;
+	uint64_t GetAbsoluteAddrInBlock(uint32_t blockAddr, uint32_t offset) const;
 
 	bool SetBytes(uint32_t position, const char* data, uint32_t length);	// Low-level writing
 	bool GetBytes(uint32_t position, char* data, uint32_t length);			// Low-level reading

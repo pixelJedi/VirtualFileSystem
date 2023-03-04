@@ -83,7 +83,7 @@ std::map<VDisk::Sect, uint32_t> VDisk::infoAddr = {
 	{Sect::firstNode,	4 * ADDR},
 	{Sect::nofs_ncode,	0},
 	{Sect::nofs_meta,	ADDR},
-	{Sect::nofs_name,	ADDR + 1},
+	{Sect::nofs_name,	ADDR + NODEMETA},
 	{Sect::nofs_addr,	NODEDATA - ADDR}
 };
 
@@ -104,6 +104,23 @@ uint64_t VDisk::GetDiskSize(std::string filename) const
 {
 	std::ifstream in(filename, std::ifstream::ate | std::ifstream::binary);
 	return in.tellg();
+}
+Node* VDisk::LoadHierarchy(uint32_t start_index)
+{
+	Node* root = nullptr;
+	uint32_t curr_nc = GetNodeCode(start_index);
+	for (uint32_t addr = infoAddr[Sect::firstNode]+ start_index * NODEDATA; addr != infoAddr[Sect::firstBlock]; addr = addr + NODEDATA)
+	{
+		if (curr_nc != GetNodeCode(addr)) return root;
+		char name[NODENAME];
+		GetBytes(addr + infoAddr[Sect::nofs_name], name, NODENAME);
+		root->Add(std::string{name},addr);
+		if (!IsFileNode(addr))
+		{
+			root->BindNewTreeToChild(name, LoadHierarchy(GetChildAddr(addr)));
+		}
+	}
+	return root;
 }
 /// <summary>
 /// Sets the file that hasn't been used yet
@@ -132,6 +149,7 @@ bool VDisk::UpdateDisk()
 {
 	// todo: check why not all binary data is displayed immediately in Notepad+. Stream updates data with a delay?
 	// todo: think of splitting this method when other writings are moved here
+	// todo: write nodes from root to node section
 	try
 	{
 		SetBytes(infoAddr[Sect::freeNodes], IntToChar(freeNodes), ADDR);
@@ -205,9 +223,27 @@ uint32_t VDisk::TakeFreeBlocks()
 }
 bool VDisk::IsEmptyNode(short index)
 {
-	char* nodeValue = new char;	// Checking if name is null
-	GetBytes(infoAddr[Sect::firstNode] + index*NODEDATA + infoAddr[Sect::nofs_name], nodeValue, 1);
-	return *nodeValue == char(0);
+	char* val = new char;	// Checking if name is null
+	GetBytes(infoAddr[Sect::firstNode] + index * NODEDATA + infoAddr[Sect::nofs_name], val, 1);
+	return *val == char(0);
+}
+bool VDisk::IsFileNode(short index)
+{
+	char* val = new char;	// Checking if dir flag in node metadata is not set
+	GetBytes(infoAddr[Sect::firstNode] + index * NODEDATA + infoAddr[Sect::nofs_meta], val, 1);
+	return (*val & 0b1000'0000) == 0;
+}
+uint32_t VDisk::GetNodeCode(short index)
+{
+	char* val = new char[ADDR];	
+	GetBytes(infoAddr[Sect::firstNode] + index * NODEDATA, val, ADDR);
+	return CharToInt32(val);
+}
+uint32_t VDisk::GetChildAddr(short index)
+{
+	char* val = new char[ADDR];
+	GetBytes(infoAddr[Sect::firstNode] + index * NODEDATA + infoAddr[Sect::nofs_addr], val, ADDR);
+	return CharToInt32(val);
 }
 char* VDisk::BuildNode(uint32_t nodeCode, uint32_t blockAddr, const char* name, bool isDir)
 {
@@ -221,7 +257,7 @@ char* VDisk::BuildNode(uint32_t nodeCode, uint32_t blockAddr, const char* name, 
 		// Metadata
 		newNode[ibyte++] = BuildFileMeta(isDir, 0, 0);
 		// Name
-		for (; ibyte < (NODEDATA - 2 * ADDR - 1); ++ibyte)
+		for (; ibyte < NODENAME; ++ibyte)
 			newNode[ibyte] = name[ibyte-ADDR-1];
 		// File address
 		for (; ibyte < ADDR; ++ibyte)					
@@ -250,13 +286,13 @@ void VDisk::InitTitleBlock(File* file)
 
 	uint64_t totalBlocks = file->blocks.size();
 	for (int i = 0; i < totalBlocks; ++i)
-		SetBytes(GetAbsoluteAddr(file->GetAddr(),File::infoAddr[File::Sect::firstAddr] + i * ADDR), IntToChar(file->blocks[i]), ADDR);
+		SetBytes(GetAbsoluteAddrInBlock(file->GetAddr(),File::infoAddr[File::Sect::firstAddr] + i * ADDR), IntToChar(file->blocks[i]), ADDR);
 	delete[] data;
 }
 /// <summary>
 /// Byte number from the beginning of the disk
 /// </summary>
-uint64_t VDisk::GetAbsoluteAddr(uint32_t blockAddr, uint32_t offset) const
+uint64_t VDisk::GetAbsoluteAddrInBlock(uint32_t blockAddr, uint32_t offset) const
 {
 	return infoAddr[Sect::firstBlock] + blockAddr * BLOCK + offset;
 }
@@ -337,7 +373,7 @@ File* VDisk::FMalloc(const char* name)
 	UpdateDisk();
 	return f;
 }
-
+/// Loading existing disk 
 VDisk::VDisk(const std::string fileName):
 	name(fileName),
 	sizeInBytes(GetDiskSize(fileName)),
@@ -347,11 +383,13 @@ VDisk::VDisk(const std::string fileName):
 	std::cout << "Disk \"" << name << "\" opened\n";
 	
 	disk.open(fileName, std::fstream::in | std::ios::out | std::fstream::binary);
+	root = LoadHierarchy();
 	freeNodes = CharToInt32(ReadInfo(Sect::freeNodes));
 	freeBlocks = CharToInt32(ReadInfo(Sect::freeBlocks));
 	nextFreeBlock = CharToInt32(ReadInfo(Sect::nextFree));
 	infoAddr[Sect::firstBlock] = DISKDATA + maxNode * NODEDATA;
 }
+/// Creating new disk 
 VDisk::VDisk(const std::string fileName, const uint64_t size) :
 	name(fileName),
 	maxNode(EstimateNodeCapacity(size)),
@@ -361,6 +399,7 @@ VDisk::VDisk(const std::string fileName, const uint64_t size) :
 	std::cout << "Disk \"" << name << "\" created\n";
 	
 	disk.open(fileName, std::fstream::in | std::fstream::out | std::fstream::binary | std::fstream::trunc);
+	root = new Node();
 	infoAddr[Sect::firstBlock] = DISKDATA + maxNode * NODEDATA;
 	if (!InitDisk())
 		std::cout << "Init failed!\n";
@@ -369,6 +408,7 @@ VDisk::~VDisk()
 {
 	UpdateDisk();
 	disk.close();
+	root->Destroy();
 	std::cout << "Disk \"" << name << "\" closed\n";
 }
 
