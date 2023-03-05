@@ -56,8 +56,8 @@ public:
 	uint64_t GetSize() const { return _realSize; };
 	uint32_t SetSize(uint64_t value) { _realSize = value; };
 
-	bool IsBusy();						// TBD
-	bool IsWriteMode();					// TBD
+	bool IsBusy() { return _writemode || _readmode_count; };
+	bool IsWriteMode() { return _writemode; };
 
 	uint64_t WritePtr() const;
 	size_t ReadNext(char* buffer);		// TBD
