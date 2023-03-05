@@ -22,8 +22,14 @@
 struct Node
 {
 private:
-
+	std::string _name;			// Unmutable
+	uint32_t _nodeAddr;			// Unmutable
 public:
+	std::string GetName() const { return _name; };
+	uint32_t GetNode() const { return _nodeAddr; };
+	char* NodeToChar();
+
+	Node(uint32_t nodeAddr, std::string name);
 };
 /// <summary>
 /// The complex pointer used for locating file datablocks on VDisk.
@@ -32,15 +38,12 @@ public:
 struct File : Node
 {
 private:
-
-	std::string _name;
-	uint32_t _nodeAddr;			// Unmutable
+	inline static short MAX_READERS = 15;
 	uint64_t _realSize;			// Changed after writing, used for calculating position for write data
-
+	bool _writemode;
+	short _readmode_count;
 public:
-
 	std::vector<uint32_t> blocks;				// Remember: addresses are ADDR length
-
 	enum class Sect
 	{
 		nextTB,		// Address of the next title block, if such exists; address of the current block otherwise
@@ -49,22 +52,19 @@ public:
 	};
 	static std::map<Sect, uint32_t> infoAddr;	// Offsets in bytes for data sections
 
-	uint32_t GetNode() const { return _nodeAddr; };
 	uint32_t GetData() const { return *blocks.begin(); };
 	uint64_t GetSize() const { return _realSize; };
 	uint32_t SetSize(uint64_t value) { _realSize = value; };
-	std::string GetName() const { return _name; };
-	std::string SetName(std::string value) { _name = value; };
 
 	bool IsBusy();						// TBD
 	bool IsWriteMode();					// TBD
 
 	uint64_t WritePtr() const;
-	size_t ReadNext(char* buffer);	// TBD
-	size_t WriteData(char * buffer);		// TBD
+	size_t ReadNext(char* buffer);		// TBD
+	size_t WriteData(char * buffer);	// TBD
 
 	File() = delete;
-	File(uint32_t nodeAddr, uint32_t blockAddr, std::string name);
+	File(uint32_t nodeAddr, uint32_t blockAddr, std::string name, bool writemode = false, short readmode_count = 0);
 };
 
 /* ---VDisk----------------------------------------------------------------- */

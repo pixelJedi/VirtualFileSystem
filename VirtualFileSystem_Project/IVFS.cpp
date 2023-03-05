@@ -8,6 +8,12 @@
 
 /* ---File------------------------------------------------------------------ */
 
+Node::Node(uint32_t nodeAddr, std::string name)
+{
+	_name = name;
+	_nodeAddr = nodeAddr;
+}
+
 /// <summary>
 /// Offsets from the block's beginning
 /// </summary>
@@ -63,11 +69,11 @@ size_t File::WriteData(char* buffer)
 	return size_t();
 }
 
-File::File(uint32_t nodeAddr, uint32_t blockAddr, std::string name)
+File::File(uint32_t nodeAddr, uint32_t blockAddr, std::string name, bool writemode, short readmode_count) : Node(nodeAddr, name)
 {
-	_name = name;
-	_nodeAddr = nodeAddr;
 	_realSize = 0;
+	_writemode = writemode;
+	_readmode_count = readmode_count;
 
 	for(int i = 0;i<CLUSTER;++i)
 		blocks.push_back(blockAddr+i);
@@ -110,7 +116,9 @@ Vertice<Node*>* VDisk::LoadHierarchy(uint32_t start_index)
 		root = new Vertice<Node*>();
 		char name[NODENAME];
 		GetBytes(addr + infoAddr[Sect::nofs_name], name, NODENAME);
-		Node* node = IsFileNode(addr) ? nullptr/*new File()*/ : new Node();
+		char blockaddr[ADDR];
+		GetBytes(addr + infoAddr[Sect::nofs_addr], blockaddr, NODENAME);
+		Node* node = IsFileNode(addr) ? new File(addr,CharToInt32(blockaddr),name) : new Node(addr, name);
 		root->Add(std::string{name}, &node);
 		if (!IsFileNode(addr))
 		{
