@@ -69,6 +69,18 @@ public:
 
 /* ---VDisk----------------------------------------------------------------- */
 
+class BinDisk : std::fstream 
+{
+public:
+	bool SetBytes(uint32_t position, const char* data, uint32_t length);	// Low-level writing
+	bool GetBytes(uint32_t position, char* data, uint32_t length);			// Low-level reading
+
+	void MakeZeroFile(size_t size);
+
+	void Open(const std::string fileName, bool asNew = false);
+	void Close();
+};
+
 /// <summary>
 /// VDisk emulates a physical storage within a physical file and is responsible for low-level data management.
 /// Basically, VDisk is only intended to be used internally by the VFS class.
@@ -79,7 +91,7 @@ class VDisk
 {
 private:
 
-	std::fstream disk;							// Main data in/out stream
+	BinDisk disk;							// Main data in/out stream
 	Vertice<Node*>* root;
 
 	enum class Sect 
@@ -129,9 +141,6 @@ private:
 
 	uint64_t GetAbsoluteAddrInBlock(uint32_t blockAddr, uint32_t offset) const;
 
-	bool SetBytes(uint32_t position, const char* data, uint32_t length);	// Low-level writing
-	bool GetBytes(uint32_t position, char* data, uint32_t length);			// Low-level reading
-
 public:
 	std::string GetName() const { return name; };
 	uint64_t GetSizeInBytes() const{ return sizeInBytes; };
@@ -179,7 +188,7 @@ public:
 	VDisk* GetMostFreeDisk();
 
 	File* Open(const char* name) override;					// TBD
-	File* Create(const char* name) override;				// TBD
+	File* Create(const char* name) override;
 	size_t Read(File* f, char* buff, size_t len) override;	// TBD
 	size_t Write(File* f, char* buff, size_t len) override;	// TBD
 	void Close(File* f) override;							// TBD

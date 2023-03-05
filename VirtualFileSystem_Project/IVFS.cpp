@@ -23,24 +23,6 @@ std::map<File::Sect, uint32_t> File::infoAddr = {
 	{Sect::firstAddr,	3 * ADDR}
 };
 
-/// <summary>
-/// Check the read/write flags in the filenode
-/// </summary>
-/// <returns>true, if somebody is either reading or writing</returns>
-bool File::IsBusy()
-{
-	// TBD
-	return false;
-}
-/// <summary>
-/// Check the write flag in the filenode
-/// </summary>
-/// <returns>true, if somebody is writing</returns>
-bool File::IsWriteMode()
-{
-	// TBD
-	return false;
-}
 ///
 /// <returns>Number of the first empty byte from the last block's beginning</returns>
 uint64_t File::WritePtr() const
@@ -81,6 +63,39 @@ File::File(uint32_t nodeAddr, uint32_t blockAddr, std::string name, bool writemo
 
 /* ---VDisk----------------------------------------------------------------- */
 
+bool BinDisk::SetBytes(uint32_t position, const char* data, uint32_t length)
+{
+	seekp(position, std::ios_base::beg);
+	write(data, length);
+	return true;
+}
+bool BinDisk::GetBytes(uint32_t position, char* data, uint32_t length)
+{
+	seekg(position, std::ios_base::beg);
+	read(data, length);
+	return true;
+}
+
+void BinDisk::MakeZeroFile(size_t size)
+{
+	char c = char(0b0);
+	while (size--) {
+		this->write(&c, 1);
+	}
+}
+
+void BinDisk::Open(const std::string fileName, bool asNew)
+{
+	auto traits = std::fstream::in | std::fstream::out | std::fstream::binary;
+	if (asNew) traits |= std::fstream::trunc;
+	this->open(fileName, traits);
+}
+
+void BinDisk::Close()
+{
+	this->close();
+}
+
 std::map<VDisk::Sect, uint32_t> VDisk::infoAddr = {
 	{Sect::freeNodes,	0 * ADDR},
 	{Sect::freeBlocks,	1 * ADDR},
@@ -115,9 +130,9 @@ Vertice<Node*>* VDisk::LoadHierarchy(uint32_t start_index)
 		if (curr_nc != GetNodeCode(addr)) return root;
 		root = new Vertice<Node*>();
 		char name[NODENAME];
-		GetBytes(addr + infoAddr[Sect::nofs_name], name, NODENAME);
+		disk.GetBytes(addr + infoAddr[Sect::nofs_name], name, NODENAME);
 		char blockaddr[ADDR];
-		GetBytes(addr + infoAddr[Sect::nofs_addr], blockaddr, NODENAME);
+		disk.GetBytes(addr + infoAddr[Sect::nofs_addr], blockaddr, NODENAME);
 		Node* node = IsFileNode(addr) ? new File(addr,CharToInt32(blockaddr),name) : new Node(addr, name);
 		root->Add(std::string{name}, &node);
 		if (!IsFileNode(addr))
@@ -139,7 +154,7 @@ bool VDisk::InitDisk()
 {
 	try
 	{
-		FillWithZeros(disk, sizeInBytes);
+		disk.MakeZeroFile(sizeInBytes);
 		freeNodes = maxNode;
 		freeBlocks = maxBlock;
 		nextFreeBlock = 0;
@@ -161,13 +176,13 @@ bool VDisk::UpdateDisk()
 	// todo: write nodes from root to node section
 	try
 	{
-		SetBytes(infoAddr[Sect::freeNodes], IntToChar(freeNodes), ADDR);
-		SetBytes(infoAddr[Sect::freeBlocks], IntToChar(freeBlocks), ADDR);
-		SetBytes(infoAddr[Sect::maxNode], IntToChar(maxNode), ADDR);
-		SetBytes(infoAddr[Sect::nextFree], IntToChar(nextFreeBlock), ADDR);
+		disk.SetBytes(infoAddr[Sect::freeNodes], IntToChar(freeNodes), ADDR);
+		disk.SetBytes(infoAddr[Sect::freeBlocks], IntToChar(freeBlocks), ADDR);
+		disk.SetBytes(infoAddr[Sect::maxNode], IntToChar(maxNode), ADDR);
+		disk.SetBytes(infoAddr[Sect::nextFree], IntToChar(nextFreeBlock), ADDR);
 		// The fstream is reopened in order to update displayed values in hex editor
-		disk.close();
-		disk.open(name, std::fstream::in | std::ios::out | std::fstream::binary);
+		disk.Close();
+		disk.Open(name);
 		std::cout << "Disk \"" << name << "\" updated\n";
 	}
 	catch (...)
@@ -189,7 +204,7 @@ char* VDisk::ReadInfo(VDisk::Sect info)
 	case VDisk::Sect::maxNode:
 	case VDisk::Sect::nextFree:
 		bytes = new char[ADDR];
-		GetBytes(infoAddr[info], bytes, ADDR);
+		disk.GetBytes(infoAddr[info], bytes, ADDR);
 		return bytes;
 	default:
 		return nullptr;
@@ -223,25 +238,25 @@ uint32_t VDisk::TakeFreeBlocks()
 bool VDisk::IsEmptyNode(short index)
 {
 	char* val = new char;	// Checking if name is null
-	GetBytes(infoAddr[Sect::firstNode] + index * NODEDATA + infoAddr[Sect::nofs_name], val, 1);
+	disk.GetBytes(infoAddr[Sect::firstNode] + index * NODEDATA + infoAddr[Sect::nofs_name], val, 1);
 	return *val == char(0);
 }
 bool VDisk::IsFileNode(short index)
 {
 	char* val = new char;	// Checking if dir flag in node metadata is not set
-	GetBytes(infoAddr[Sect::firstNode] + index * NODEDATA + infoAddr[Sect::nofs_meta], val, 1);
+	disk.GetBytes(infoAddr[Sect::firstNode] + index * NODEDATA + infoAddr[Sect::nofs_meta], val, 1);
 	return (*val & 0b1000'0000) == 0;
 }
 uint32_t VDisk::GetNodeCode(short index)
 {
 	char* val = new char[ADDR];	
-	GetBytes(infoAddr[Sect::firstNode] + index * NODEDATA, val, ADDR);
+	disk.GetBytes(infoAddr[Sect::firstNode] + index * NODEDATA, val, ADDR);
 	return CharToInt32(val);
 }
 uint32_t VDisk::GetChildAddr(short index)
 {
 	char* val = new char[ADDR];
-	GetBytes(infoAddr[Sect::firstNode] + index * NODEDATA + infoAddr[Sect::nofs_addr], val, ADDR);
+	disk.GetBytes(infoAddr[Sect::firstNode] + index * NODEDATA + infoAddr[Sect::nofs_addr], val, ADDR);
 	return CharToInt32(val);
 }
 char* VDisk::BuildNode(uint32_t nodeCode, uint32_t blockAddr, const char* name, bool isDir)
@@ -280,12 +295,12 @@ void VDisk::InitTitleBlock(File* file)
 	// todo: move the writing to the UpdateDisk, build data charset here
 	char* data = new char[BLOCK];
 
-	SetBytes(file->GetData() + File::infoAddr[File::Sect::nextTB], IntToChar(file->GetData()), ADDR);
-	SetBytes(file->GetData() + File::infoAddr[File::Sect::sizeVal], IntToChar(file->GetSize()), 2 * ADDR);
+	disk.SetBytes(file->GetData() + File::infoAddr[File::Sect::nextTB], IntToChar(file->GetData()), ADDR);
+	disk.SetBytes(file->GetData() + File::infoAddr[File::Sect::sizeVal], IntToChar(file->GetSize()), 2 * ADDR);
 
 	uint64_t totalBlocks = file->blocks.size();
 	for (int i = 0; i < totalBlocks; ++i)
-		SetBytes(GetAbsoluteAddrInBlock(file->GetData(),File::infoAddr[File::Sect::firstAddr] + i * ADDR), IntToChar(file->blocks[i]), ADDR);
+		disk.SetBytes(GetAbsoluteAddrInBlock(file->GetData(),File::infoAddr[File::Sect::firstAddr] + i * ADDR), IntToChar(file->blocks[i]), ADDR);
 	delete[] data;
 }
 /// <summary>
@@ -294,19 +309,6 @@ void VDisk::InitTitleBlock(File* file)
 uint64_t VDisk::GetAbsoluteAddrInBlock(uint32_t blockAddr, uint32_t offset) const
 {
 	return infoAddr[Sect::firstBlock] + blockAddr * BLOCK + offset;
-}
-
-bool VDisk::SetBytes(uint32_t position, const char* data, uint32_t length)
-{
-	disk.seekp(position, std::ios_base::beg);
-	disk.write(data, length);
-	return true;
-}
-bool VDisk::GetBytes(uint32_t position, char* data, uint32_t length)
-{
-	disk.seekg(position, std::ios_base::beg);
-	disk.read(data, length);
-	return true;
 }
 
 /*
@@ -362,7 +364,8 @@ File* VDisk::FMalloc(const char* name)
 		uint32_t freeNode = TakeFreeNode();
 		uint32_t freeBlock = TakeFreeBlocks();
 		File* f = new File(freeNode, freeBlock, name);
-		SetBytes(infoAddr[Sect::firstNode] + freeNode, BuildNode(freeNode, freeBlock, name, 0), NODEDATA);
+		root->Add(name, (Node**) &f);
+		disk.SetBytes(infoAddr[Sect::firstNode] + freeNode, BuildNode(freeNode, freeBlock, name, 0), NODEDATA);
 		InitTitleBlock(f);
 		UpdateDisk();
 		return f;
@@ -382,7 +385,7 @@ VDisk::VDisk(const std::string fileName):
 {
 	std::cout << "Disk \"" << name << "\" opened\n";
 	
-	disk.open(fileName, std::fstream::in | std::ios::out | std::fstream::binary);
+	disk.Open(fileName);
 	root = LoadHierarchy();
 	freeNodes = CharToInt32(ReadInfo(Sect::freeNodes));
 	freeBlocks = CharToInt32(ReadInfo(Sect::freeBlocks));
@@ -398,7 +401,7 @@ VDisk::VDisk(const std::string fileName, const uint64_t size) :
 {
 	std::cout << "Disk \"" << name << "\" created\n";
 	
-	disk.open(fileName, std::fstream::in | std::fstream::out | std::fstream::binary | std::fstream::trunc);
+	disk.Open(fileName, true);
 	root = new Vertice<Node*>();
 	infoAddr[Sect::firstBlock] = DISKDATA + maxNode * NODEDATA;
 	if (!InitDisk())
@@ -407,7 +410,7 @@ VDisk::VDisk(const std::string fileName, const uint64_t size) :
 VDisk::~VDisk()
 {
 	UpdateDisk();
-	disk.close();
+	disk.Close();
 	root->Destroy();
 	std::cout << "Disk \"" << name << "\" closed\n";
 }
@@ -499,12 +502,17 @@ VDisk* VFS::GetMostFreeDisk()
 {
 	if (!disks.size()) return nullptr;
 	VDisk* chosenDisk = nullptr;
+	uint32_t max_blocks = 0;
 	for (const auto& disk : disks)
 	{
 		uint32_t cur_nodes = disk->GetNodesLeft();
 		uint32_t cur_blocks = disk->GetBlocksLeft();
 		if (!cur_nodes || !cur_blocks) continue;
-		if (disk->GetBlocksLeft() > chosenDisk->GetBlocksLeft()) chosenDisk = disk;
+		if (disk->GetBlocksLeft() > max_blocks)
+		{
+			max_blocks = disk->GetBlocksLeft();
+			chosenDisk = disk;
+		}
 	}
 	return chosenDisk;
 }
@@ -567,14 +575,6 @@ VFS::~VFS()
 }
 
 /* ---Misc------------------------------------------------------------------ */
-
-void FillWithZeros(std::fstream& fs, size_t size)
-{
-	char c = char(0b0);
-	while (size--) {
-		fs.write(&c, 1);
-	}
-}
 
 template<typename T> char* IntToChar(const T& data)
 {
