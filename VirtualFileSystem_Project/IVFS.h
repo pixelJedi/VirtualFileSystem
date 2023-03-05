@@ -40,13 +40,13 @@ struct File : Node
 {
 private:
 	inline static short MAX_READERS = 15;
-	uint64_t _realSize;			// Changed after writing, used for calculating position for write data
+	uint64_t _realSize;				// Changed after writing, used for calculating position for write data
 	bool _writemode;
 	short _readmode_count;
 
 	char BuildFileMeta();
 public:
-	std::vector<uint32_t> blocks;				// Remember: addresses are ADDR length
+	std::vector<uint32_t> blocks;	// Remember: addresses are ADDR length
 	
 	uint32_t GetData() const { return *blocks.begin(); };
 	uint64_t GetSize() const { return _realSize; };
@@ -59,9 +59,9 @@ public:
 	void AddReader();
 	void RemoveReader();
 
-	uint64_t WritePtr() const;
+	uint64_t Fseekp() const;
 	size_t ReadNext(char* buffer);		// TBD
-	size_t WriteData(char * buffer);	// TBD
+	void WriteNext(char* buffer, size_t & count);
 
 	char* NodeToChar(uint32_t nodeCode);
 

@@ -52,7 +52,7 @@ void File::RemoveReader()
 
 ///
 /// <returns>Number of the first empty byte from the last block's beginning</returns>
-uint64_t File::WritePtr() const
+uint64_t File::Fseekp() const
 {	
 	return uint64_t(GetSize() % BLOCK + 1);
 }
@@ -70,12 +70,17 @@ size_t File::ReadNext(char* buffer)
 /// Writes the next block of data from the buffer
 /// </summary>
 /// <returns>The number of bytes that are left to write</returns>
-size_t File::WriteData(char* buffer)
+void File::WriteNext(char* buffer, size_t & count)
 {
-	// TBD
 	// Use the WritePtr() to get the starting position
 	// Remember: first and last blocks can be incomplete
-	return size_t();
+	/*
+	1. Понять, в каком блоке находится указатель через realsize
+	2. Получить указатель внутри блока - Fseekp
+	3. Посчитать, сколько символов можно вписать до конца блока
+	4. Записать символы
+	5. Увеличить realsize
+	*/
 }
 
 char File::BuildFileMeta()
@@ -626,8 +631,28 @@ size_t VFS::Read(File* f, char* buff, size_t len)
 }
 size_t VFS::Write(File* f, char* buff, size_t len)
 {
-	// TBD
-	return size_t();
+	/*
+	1. +Файл уже есть - f
+	2. +Получить из f абс. адрес первого байта записи
+	3. Записать данные до конца блока
+	4. Записать оставшиеся данные в другие блоки
+	5. Обновить указатель
+	6. Если в процессе кончаются выделенные блоки, реквестировать новые
+	7. Если блоки на тек. диске кончились вовсе, закончить запись и вернуть число записанных данных
+	*/
+	size_t dataWrote = 0;
+	try
+	{
+		while (dataWrote != len)
+		{
+			f->WriteNext(buff, dataWrote);
+		}
+	}
+	catch(...)
+	{
+
+	}
+	return dataWrote;
 }
 void VFS::Close(File* f)
 {
