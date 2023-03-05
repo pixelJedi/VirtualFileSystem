@@ -54,6 +54,7 @@ public:
 
 	bool IsBusy() { return _writemode || _readmode_count; };
 	bool IsWriteMode() { return _writemode; };
+	short GetReaders() { return _readmode_count; };
 	void FlipWriteMode() { _writemode = !_writemode; };
 	void AddReader();
 	void RemoveReader();
@@ -202,8 +203,8 @@ public:
 	File* Open(const char* name) override;					// TBD
 	File* Create(const char* name) override;
 	size_t Read(File* f, char* buff, size_t len) override;	// TBD
-	size_t Write(File* f, char* buff, size_t len) override;	// TBD
-	void Close(File* f) override;							// TBD
+	size_t Write(File* f, char* buff, size_t len) override;	// <-- working here
+	void Close(File* f) override;
 
 	VFS();
 	~VFS();

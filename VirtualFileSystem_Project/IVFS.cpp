@@ -631,9 +631,19 @@ size_t VFS::Write(File* f, char* buff, size_t len)
 }
 void VFS::Close(File* f)
 {
-	// todo: update read/write flags
-	std::cout << "File \"" << f->GetName() << "\" closed\n";
-	delete f;
+	if (f->IsBusy())
+	{
+		if (f->IsWriteMode())
+		{
+			f->FlipWriteMode();
+			std::cout << "File \"" << f->GetName() << "\": writing closed\n";
+		}
+		else
+		{
+			f->RemoveReader();
+			std::cout << "File \"" << f->GetName() << "\": "<< f->GetReaders() <<" readers remain\n";
+		}
+	}
 }
 
 VFS::VFS()
