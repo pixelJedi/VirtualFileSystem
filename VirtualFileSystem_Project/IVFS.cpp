@@ -100,11 +100,6 @@ uint64_t VDisk::EstimateMaxSize(uint64_t size) const
 {
 	return uint64_t(DISKDATA + EstimateNodeCapacity(size) * NODEDATA + EstimateBlockCapacity(size) * BLOCK);
 }
-uint64_t VDisk::GetDiskSize(std::string filename) const
-{
-	std::ifstream in(filename, std::ifstream::ate | std::ifstream::binary);
-	return in.tellg();
-}
 Vertice<Node>* VDisk::LoadHierarchy(uint32_t start_index)
 {
 	Vertice<Node>* root = nullptr;
@@ -594,6 +589,11 @@ char* OpenAndReadInfo(std::string filename, uint32_t position, const uint32_t le
 	is.close();
 
 	return data;
+}
+uint64_t GetDiskSize(std::string filename)
+{
+	std::ifstream in(filename, std::ifstream::ate | std::ifstream::binary);
+	return in.tellg();
 }
 
 void PrintVerticeTree(Vertice<Node>* v, uint32_t count)

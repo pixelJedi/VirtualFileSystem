@@ -107,7 +107,6 @@ private:
 	uint32_t EstimateNodeCapacity(size_t size) const;
 	uint32_t EstimateBlockCapacity(size_t size) const;
 	uint64_t EstimateMaxSize(uint64_t size) const;		// User's size is truncated so that all blocks are of BLOCK size
-	uint64_t GetDiskSize(std::string filename) const;	// Check real size of an existing file
 	Vertice<Node>* LoadHierarchy(uint32_t start_index = 0);
 	void WriteHierarchy();
 	bool InitDisk();									// Format new VDisk
@@ -192,7 +191,8 @@ char* OpenAndReadInfo(std::string filename, uint32_t position, const uint32_t le
 
 template<typename T> char* IntToChar(const T& data);
 char* StrToChar(const std::string data);
-
 uint32_t CharToInt32(const char* bytes);
+
+uint64_t GetDiskSize(std::string filename);	// Check real size of an existing file
 
 void PrintVerticeTree(Vertice<Node>* v, uint32_t count = 0);
