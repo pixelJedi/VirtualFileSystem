@@ -100,21 +100,21 @@ uint64_t VDisk::EstimateMaxSize(uint64_t size) const
 {
 	return uint64_t(DISKDATA + EstimateNodeCapacity(size) * NODEDATA + EstimateBlockCapacity(size) * BLOCK);
 }
-Vertice<Node>* VDisk::LoadHierarchy(uint32_t start_index)
+Vertice<Node*>* VDisk::LoadHierarchy(uint32_t start_index)
 {
-	Vertice<Node>* root = nullptr;
+	Vertice<Node*>* root = nullptr;
 	uint32_t curr_nc = GetNodeCode(start_index);
 	for (uint32_t addr = infoAddr[Sect::firstNode]+ start_index * NODEDATA; addr != infoAddr[Sect::firstBlock]; addr = addr + NODEDATA)
 	{
 		if (curr_nc != GetNodeCode(addr)) return root;
-		root = new Vertice<Node>();
+		root = new Vertice<Node*>();
 		char name[NODENAME];
 		GetBytes(addr + infoAddr[Sect::nofs_name], name, NODENAME);
 		Node* node = IsFileNode(addr) ? nullptr/*new File()*/ : new Node();
-		//root->Add(std::string{name}, node);
+		root->Add(std::string{name}, &node);
 		if (!IsFileNode(addr))
 		{
-		//	root->BindNewTreeToChild(name, LoadHierarchy(GetChildAddr(addr)));
+			root->BindNewTreeToChild(name, LoadHierarchy(GetChildAddr(addr)));
 		}
 	}
 	return root;
@@ -333,8 +333,15 @@ std::string VDisk::PrintSpaceLeft() const
 /// <returns>File* if file exists, nullptr otherwise</returns>
 File* VDisk::SeekFile(const char* name) const
 {
-	// TBD
-	return nullptr;
+	try
+	{
+		return (File*)root->GetData(name);
+	}
+	catch (std::logic_error& e)
+	{
+		std::cout << e.what();
+		return nullptr;
+	}
 }
 /// <summary>
 /// Reserves and initializes space for a new file. 
@@ -384,7 +391,7 @@ VDisk::VDisk(const std::string fileName, const uint64_t size) :
 	std::cout << "Disk \"" << name << "\" created\n";
 	
 	disk.open(fileName, std::fstream::in | std::fstream::out | std::fstream::binary | std::fstream::trunc);
-	root = new Vertice<Node>();
+	root = new Vertice<Node*>();
 	infoAddr[Sect::firstBlock] = DISKDATA + maxNode * NODEDATA;
 	if (!InitDisk())
 		std::cout << "Init failed!\n";

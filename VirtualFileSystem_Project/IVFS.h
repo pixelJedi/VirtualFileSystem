@@ -21,7 +21,9 @@
 
 struct Node
 {
+private:
 
+public:
 };
 /// <summary>
 /// The complex pointer used for locating file datablocks on VDisk.
@@ -78,7 +80,7 @@ class VDisk
 private:
 
 	std::fstream disk;							// Main data in/out stream
-	Vertice<Node>* root;
+	Vertice<Node*>* root;
 
 	enum class Sect 
 	{ 
@@ -107,7 +109,7 @@ private:
 	uint32_t EstimateNodeCapacity(size_t size) const;
 	uint32_t EstimateBlockCapacity(size_t size) const;
 	uint64_t EstimateMaxSize(uint64_t size) const;		// User's size is truncated so that all blocks are of BLOCK size
-	Vertice<Node>* LoadHierarchy(uint32_t start_index = 0);
+	Vertice<Node*>* LoadHierarchy(uint32_t start_index = 0);
 	void WriteHierarchy();
 	bool InitDisk();									// Format new VDisk
 	bool UpdateDisk();									// Write data into the associated file
