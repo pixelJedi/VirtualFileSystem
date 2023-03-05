@@ -3,7 +3,7 @@
 #include <vector>
 #include <fstream>
 #include <map>
-#include "Node.h"
+#include "Vertice.h"
 
 /* ---Commmon--------------------------------------------------------------- */
 
@@ -19,22 +19,31 @@
 
 /* ---File------------------------------------------------------------------ */
 
+struct Node
+{
+private:
+	std::string _name;			// Unmutable
+	uint32_t _nodeAddr;			// Unmutable
+public:
+	std::string GetName() const { return _name; };
+	uint32_t GetNode() const { return _nodeAddr; };
+	char* NodeToChar();
+
+	Node(uint32_t nodeAddr, std::string name);
+};
 /// <summary>
 /// The complex pointer used for locating file datablocks on VDisk.
 /// On VDisk File is represented by node in node area and by data blocks in data area.
 /// </summary>
-struct File
+struct File : Node
 {
 private:
-
-	std::string _name;
-	uint32_t _nodeAddr;			// Unmutable
+	inline static short MAX_READERS = 15;
 	uint64_t _realSize;			// Changed after writing, used for calculating position for write data
-
+	bool _writemode;
+	short _readmode_count;
 public:
-
 	std::vector<uint32_t> blocks;				// Remember: addresses are ADDR length
-
 	enum class Sect
 	{
 		nextTB,		// Address of the next title block, if such exists; address of the current block otherwise
@@ -43,22 +52,19 @@ public:
 	};
 	static std::map<Sect, uint32_t> infoAddr;	// Offsets in bytes for data sections
 
-	uint32_t GetNode() const { return _nodeAddr; };
-	uint32_t GetAddr() const { return *blocks.begin(); };
+	uint32_t GetData() const { return *blocks.begin(); };
 	uint64_t GetSize() const { return _realSize; };
 	uint32_t SetSize(uint64_t value) { _realSize = value; };
-	std::string GetName() const { return _name; };
-	std::string SetName(std::string value) { _name = value; };
 
-	bool IsBusy();						// TBD
-	bool IsWriteMode();					// TBD
+	bool IsBusy() { return _writemode || _readmode_count; };
+	bool IsWriteMode() { return _writemode; };
 
 	uint64_t WritePtr() const;
-	size_t ReadNext(char* buffer);	// TBD
-	size_t WriteData(char * buffer);		// TBD
+	size_t ReadNext(char* buffer);		// TBD
+	size_t WriteData(char * buffer);	// TBD
 
 	File() = delete;
-	File(uint32_t nodeAddr, uint32_t blockAddr, std::string name);
+	File(uint32_t nodeAddr, uint32_t blockAddr, std::string name, bool writemode = false, short readmode_count = 0);
 };
 
 /* ---VDisk----------------------------------------------------------------- */
@@ -74,7 +80,7 @@ class VDisk
 private:
 
 	std::fstream disk;							// Main data in/out stream
-	Node* root;
+	Vertice<Node*>* root;
 
 	enum class Sect 
 	{ 
@@ -103,8 +109,7 @@ private:
 	uint32_t EstimateNodeCapacity(size_t size) const;
 	uint32_t EstimateBlockCapacity(size_t size) const;
 	uint64_t EstimateMaxSize(uint64_t size) const;		// User's size is truncated so that all blocks are of BLOCK size
-	uint64_t GetDiskSize(std::string filename) const;	// Check real size of an existing file
-	Node* LoadHierarchy(uint32_t start_index = 0);
+	Vertice<Node*>* LoadHierarchy(uint32_t start_index = 0);
 	void WriteHierarchy();
 	bool InitDisk();									// Format new VDisk
 	bool UpdateDisk();									// Write data into the associated file
@@ -128,7 +133,6 @@ private:
 	bool GetBytes(uint32_t position, char* data, uint32_t length);			// Low-level reading
 
 public:
-
 	std::string GetName() const { return name; };
 	uint64_t GetSizeInBytes() const{ return sizeInBytes; };
 	uint32_t GetBlocksLeft() const { return freeBlocks; };
@@ -191,5 +195,8 @@ char* OpenAndReadInfo(std::string filename, uint32_t position, const uint32_t le
 
 template<typename T> char* IntToChar(const T& data);
 char* StrToChar(const std::string data);
-
 uint32_t CharToInt32(const char* bytes);
+
+uint64_t GetDiskSize(std::string filename);	// Check real size of an existing file
+
+void PrintVerticeTree(Vertice<Node>* v, uint32_t count = 0);
