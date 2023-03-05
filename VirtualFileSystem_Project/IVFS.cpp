@@ -18,10 +18,11 @@ char* Node::NodeToChar(uint32_t nodeCode)
 		for (; ibyte < ADDR; ++ibyte)
 			newNode[ibyte] = IntToChar(nodeCode)[ibyte];
 	// Metadata
-		newNode[ibyte++] = char(0b10000000);
+		for (; ibyte < NODEMETA; ++ibyte)
+			newNode[ibyte] = char(0b10000000);
 	// Name
 		for (; ibyte < NODENAME; ++ibyte)
-		newNode[ibyte] = _name[ibyte - ADDR - 1];
+			newNode[ibyte] = _name[ibyte - (ADDR + 1)];
 	// File address
 		for (; ibyte < ADDR; ++ibyte)
 			newNode[ibyte] = IntToChar(_nodeAddr)[ibyte];
@@ -38,6 +39,15 @@ Node::Node(uint32_t nodeAddr, std::string name)
 {
 	_name = name;
 	_nodeAddr = nodeAddr;
+}
+
+void File::AddReader() 
+{ 
+	_readmode_count = _readmode_count < MAX_READERS ? ++_readmode_count : MAX_READERS;
+}
+void File::RemoveReader() 
+{ 
+	_readmode_count = _readmode_count > 0 ? --_readmode_count : 0;
 }
 
 ///
@@ -262,6 +272,14 @@ char* VDisk::ReadInfo(Sect info, uint32_t i)
 
 	switch (info)
 	{
+	case Sect::s_nodes:
+		pos = addrMap[info] + i * NODEDATA;
+		len = NODEDATA;
+		break;
+	case Sect::s_blocks:
+		pos = addrMap[info] + i * BLOCK;
+		len = BLOCK;
+		break;
 	case Sect::dd_fNodes:
 	case Sect::dd_fBlks:
 	case Sect::dd_maxNode:
@@ -415,8 +433,6 @@ File* VDisk::FMalloc(const char* name)
 		uint32_t freeBlock = TakeFreeBlocks();
 		File* f = new File(freeNode, freeBlock, name);
 		root->Add(name, (Node**) &f);
-		// !!! rework nodecode alloc
-		disk.SetBytes(addrMap[Sect::s_nodes] + freeNode, f->NodeToChar(0), NODEDATA);
 		InitTitleBlock(f);
 		UpdateDisk();
 		return f;
@@ -594,7 +610,11 @@ File* VFS::Create(const char* name)
 	for (const auto& disk : disks)
 	{
 		file = disk->SeekFile(name);
-		if (file && !(file->IsBusy())) return file;
+		if (file && !(file->IsBusy()))
+		{
+			file->FlipWriteMode();
+			return file;
+		}
 	}
 	file = GetMostFreeDisk()->FMalloc(name);
 	return file;

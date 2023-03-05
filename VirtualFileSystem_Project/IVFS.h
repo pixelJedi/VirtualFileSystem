@@ -54,6 +54,9 @@ public:
 
 	bool IsBusy() { return _writemode || _readmode_count; };
 	bool IsWriteMode() { return _writemode; };
+	void FlipWriteMode() { _writemode = !_writemode; };
+	void AddReader();
+	void RemoveReader();
 
 	uint64_t WritePtr() const;
 	size_t ReadNext(char* buffer);		// TBD
@@ -127,19 +130,22 @@ private:
 	uint32_t EstimateNodeCapacity(size_t size) const;
 	uint32_t EstimateBlockCapacity(size_t size) const;
 	uint64_t EstimateMaxSize(uint64_t size) const;		// User's size is truncated so that all blocks are of BLOCK size
+	
+	uint32_t TakeFreeNode();
+	uint32_t TakeFreeBlocks();
+
 	Vertice<Node*>* LoadHierarchy(uint32_t start_index = 0);
 	void WriteHierarchy();
+	
 	bool InitDisk();									// Format new VDisk
 	bool UpdateDisk();									// Write data into the associated file
+	
 	char* ReadInfo(Sect info, uint32_t i = 0);			// Get raw data from a specific Section
-
+	
 	bool IsEmptyNode(short index);
 	bool IsFileNode(short index);
 	uint32_t GetNodeCode(short index);
 	uint32_t GetChildAddr(short index);
-
-	uint32_t TakeFreeNode();
-	uint32_t TakeFreeBlocks();
 
 	char* BuildNode(uint32_t nodeCode, uint32_t blockAddr, const char* name, bool isDir);
 	char BuildFileMeta(bool isDir, bool inWriteMode, short inReadMode);
