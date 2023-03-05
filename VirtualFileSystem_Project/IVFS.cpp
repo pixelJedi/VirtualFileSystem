@@ -6,22 +6,39 @@
 #include <filesystem>
 #include <bitset>
 
-/* ---File------------------------------------------------------------------ */
+/* ---Node-|-File----------------------------------------------------------- */
+
+char* Node::NodeToChar(uint32_t nodeCode)
+{
+	try
+	{
+		char* newNode = new char[NODEDATA];
+		short ibyte = 0;
+	// Node code
+		for (; ibyte < ADDR; ++ibyte)
+			newNode[ibyte] = IntToChar(nodeCode)[ibyte];
+	// Metadata
+		newNode[ibyte++] = char(0b10000000);
+	// Name
+		for (; ibyte < NODENAME; ++ibyte)
+		newNode[ibyte] = _name[ibyte - ADDR - 1];
+	// File address
+		for (; ibyte < ADDR; ++ibyte)
+			newNode[ibyte] = IntToChar(_nodeAddr)[ibyte];
+		return newNode;
+	}
+	catch (...)
+	{
+		return nullptr;
+	}
+}
+//char* VDisk::BuildNode(uint32_t blockAddr, const char* name, bool isDir)
 
 Node::Node(uint32_t nodeAddr, std::string name)
 {
 	_name = name;
 	_nodeAddr = nodeAddr;
 }
-
-/// <summary>
-/// Offsets from the block's beginning
-/// </summary>
-std::map<File::Sect, uint32_t> File::infoAddr = {
-	{Sect::nextTB,			0 * ADDR},
-	{Sect::sizeVal,			1 * ADDR},
-	{Sect::firstAddr,	3 * ADDR}
-};
 
 ///
 /// <returns>Number of the first empty byte from the last block's beginning</returns>
@@ -51,6 +68,38 @@ size_t File::WriteData(char* buffer)
 	return size_t();
 }
 
+char File::BuildFileMeta()
+{
+	std::bitset<8> metabitset(_readmode_count);
+	if (_writemode) metabitset.set(4);
+	return static_cast<char>(metabitset.to_ulong());
+}
+
+char* File::NodeToChar(uint32_t nodeCode)
+{
+	try
+	{
+		char* newNode = new char[NODEDATA];
+		short ibyte = 0;
+		// Node code
+		for (; ibyte < ADDR; ++ibyte)
+			newNode[ibyte] = IntToChar(nodeCode)[ibyte];
+		// Metadata
+		newNode[ibyte++] = BuildFileMeta();
+		// Name
+		for (; ibyte < NODENAME; ++ibyte)
+			newNode[ibyte] = _name[ibyte - ADDR - 1];
+		// File address
+		for (; ibyte < ADDR; ++ibyte)
+			newNode[ibyte] = IntToChar(_nodeAddr)[ibyte];
+		return newNode;
+	}
+	catch (...)
+	{
+		return nullptr;
+	}
+}
+
 File::File(uint32_t nodeAddr, uint32_t blockAddr, std::string name, bool writemode, short readmode_count) : Node(nodeAddr, name)
 {
 	_realSize = 0;
@@ -61,7 +110,7 @@ File::File(uint32_t nodeAddr, uint32_t blockAddr, std::string name, bool writemo
 		blocks.push_back(blockAddr+i);
 }
 
-/* ---VDisk----------------------------------------------------------------- */
+/* ---BinDisk--------------------------------------------------------------- */
 
 bool BinDisk::SetBytes(uint32_t position, const char* data, uint32_t length)
 {
@@ -90,22 +139,32 @@ void BinDisk::Open(const std::string fileName, bool asNew)
 	if (asNew) traits |= std::fstream::trunc;
 	this->open(fileName, traits);
 }
-
 void BinDisk::Close()
 {
 	this->close();
 }
 
-std::map<VDisk::Sect, uint32_t> VDisk::infoAddr = {
-	{Sect::freeNodes,	0 * ADDR},
-	{Sect::freeBlocks,	1 * ADDR},
-	{Sect::maxNode,		2 * ADDR},
-	{Sect::nextFree,	3 * ADDR},
-	{Sect::firstNode,	4 * ADDR},
-	{Sect::nofs_ncode,	0},
-	{Sect::nofs_meta,	ADDR},
-	{Sect::nofs_name,	ADDR + NODEMETA},
-	{Sect::nofs_addr,	NODEDATA - ADDR}
+/* ---VDisk----------------------------------------------------------------- */
+
+std::map<VDisk::Sect, uint32_t> VDisk::addrMap = {
+// Sections | offset from file begin
+	{Sect::s_data,			0 * ADDR},
+	{Sect::s_nodes,			4 * ADDR},
+	{Sect::s_blocks,		-1},		// Depends on file, is updated in VDisk(...)
+// DiskData | offset from s_data begin
+	{Sect::dd_fNodes,		0 * ADDR},
+	{Sect::dd_fBlks,		1 * ADDR},
+	{Sect::dd_maxNode,		2 * ADDR},
+	{Sect::dd_nextFreeBlk,	3 * ADDR},
+// NodeData | offset from node's begin
+	{Sect::nd_ncode,		0 * ADDR},
+	{Sect::nd_meta,			1 * ADDR},
+	{Sect::nd_name,			1 * ADDR + NODEMETA},
+	{Sect::nd_addr,			1 * ADDR + NODEMETA + NODENAME},
+// FileData | offset from Title Block's begin
+	{Sect::fd_nextTB,		0 * ADDR},
+	{Sect::fd_realSize,		1 * ADDR},
+	{Sect::fd_firstDB,		3 * ADDR}
 };
 
 uint32_t VDisk::EstimateNodeCapacity(size_t size) const
@@ -124,22 +183,23 @@ uint64_t VDisk::EstimateMaxSize(uint64_t size) const
 Vertice<Node*>* VDisk::LoadHierarchy(uint32_t start_index)
 {
 	Vertice<Node*>* root = nullptr;
+
 	uint32_t curr_nc = GetNodeCode(start_index);
-	for (uint32_t addr = infoAddr[Sect::firstNode]+ start_index * NODEDATA; addr != infoAddr[Sect::firstBlock]; addr = addr + NODEDATA)
+	for (uint32_t i = start_index; i != maxNode && curr_nc == GetNodeCode(i); ++i)
 	{
-		if (curr_nc != GetNodeCode(addr)) return root;
 		root = new Vertice<Node*>();
-		char name[NODENAME];
-		disk.GetBytes(addr + infoAddr[Sect::nofs_name], name, NODENAME);
-		char blockaddr[ADDR];
-		disk.GetBytes(addr + infoAddr[Sect::nofs_addr], blockaddr, NODENAME);
-		Node* node = IsFileNode(addr) ? new File(addr,CharToInt32(blockaddr),name) : new Node(addr, name);
+		// todo: PlainToVerticeNode from here ->
+		char* name = ReadInfo(Sect::nd_name,i);
+		uint32_t blockaddr = GetChildAddr(i);
+		Node* node = IsFileNode(i) ? new File(i,blockaddr,name) : new Node(i, name);
 		root->Add(std::string{name}, &node);
-		if (!IsFileNode(addr))
+		// < ...to here
+		if (!IsFileNode(i))
 		{
-			root->BindNewTreeToChild(name, LoadHierarchy(GetChildAddr(addr)));
+			root->BindNewTreeToChild(name, LoadHierarchy(GetChildAddr(i)));
 		}
 	}
+
 	return root;
 }
 void VDisk::WriteHierarchy()
@@ -176,13 +236,14 @@ bool VDisk::UpdateDisk()
 	// todo: write nodes from root to node section
 	try
 	{
-		disk.SetBytes(infoAddr[Sect::freeNodes], IntToChar(freeNodes), ADDR);
-		disk.SetBytes(infoAddr[Sect::freeBlocks], IntToChar(freeBlocks), ADDR);
-		disk.SetBytes(infoAddr[Sect::maxNode], IntToChar(maxNode), ADDR);
-		disk.SetBytes(infoAddr[Sect::nextFree], IntToChar(nextFreeBlock), ADDR);
-		// The fstream is reopened in order to update displayed values in hex editor
+		disk.SetBytes(addrMap[Sect::dd_fNodes], IntToChar(freeNodes), ADDR);
+		disk.SetBytes(addrMap[Sect::dd_fBlks], IntToChar(freeBlocks), ADDR);
+		disk.SetBytes(addrMap[Sect::dd_maxNode], IntToChar(maxNode), ADDR);
+		disk.SetBytes(addrMap[Sect::dd_nextFreeBlk], IntToChar(nextFreeBlock), ADDR);
+		// Debug: the fstream is reopened in order to update displayed values in hex editor
 		disk.Close();
 		disk.Open(name);
+		// eof Debug
 		std::cout << "Disk \"" << name << "\" updated\n";
 	}
 	catch (...)
@@ -194,21 +255,48 @@ bool VDisk::UpdateDisk()
 /// <summary>
 /// Wraps the GetBytes for easy access to specific data segments
 /// </summary>
-char* VDisk::ReadInfo(VDisk::Sect info)
+char* VDisk::ReadInfo(Sect info, uint32_t i)
 {
-	char* bytes;
+	uint32_t pos;
+	uint32_t len;
+
 	switch (info)
 	{
-	case VDisk::Sect::freeNodes:
-	case VDisk::Sect::freeBlocks:
-	case VDisk::Sect::maxNode:
-	case VDisk::Sect::nextFree:
-		bytes = new char[ADDR];
-		disk.GetBytes(infoAddr[info], bytes, ADDR);
-		return bytes;
+	case Sect::dd_fNodes:
+	case Sect::dd_fBlks:
+	case Sect::dd_maxNode:
+	case Sect::dd_nextFreeBlk:
+		pos = addrMap[Sect::s_data] + addrMap[info];
+		len = ADDR;
+		break;
+	case Sect::nd_ncode:
+	case Sect::nd_addr:
+		pos = addrMap[Sect::s_nodes] + i * NODEDATA + addrMap[info];
+		len = ADDR; 
+		break;
+	case Sect::nd_meta:
+		pos = addrMap[Sect::s_nodes] + i * NODEDATA + addrMap[info];
+		len = NODEMETA;
+		break;
+	case Sect::nd_name:
+		pos = addrMap[Sect::s_nodes] + i * NODEDATA + addrMap[info];
+		len = NODENAME;
+		break;
+	case Sect::fd_nextTB:
+	case Sect::fd_firstDB:
+		pos = addrMap[Sect::s_blocks] + i * BLOCK + addrMap[info];
+		len = ADDR;
+		break;
+	case Sect::fd_realSize:
+		pos = addrMap[Sect::s_blocks] + i * BLOCK + addrMap[info];
+		len = 2 * ADDR;
+		break;
 	default:
 		return nullptr;
 	};
+	char* bytes = new char[len];
+	disk.GetBytes(pos, bytes, len);
+	return bytes;
 }
 
 /// <summary>
@@ -237,70 +325,32 @@ uint32_t VDisk::TakeFreeBlocks()
 }
 bool VDisk::IsEmptyNode(short index)
 {
-	char* val = new char;	// Checking if name is null
-	disk.GetBytes(infoAddr[Sect::firstNode] + index * NODEDATA + infoAddr[Sect::nofs_name], val, 1);
-	return *val == char(0);
+	return (*ReadInfo(Sect::nd_name, index)) == char(0);	// Checking if name is null
 }
 bool VDisk::IsFileNode(short index)
 {
-	char* val = new char;	// Checking if dir flag in node metadata is not set
-	disk.GetBytes(infoAddr[Sect::firstNode] + index * NODEDATA + infoAddr[Sect::nofs_meta], val, 1);
-	return (*val & 0b1000'0000) == 0;
+	return (*ReadInfo(Sect::nd_meta, index) & 0b1000'0000) == 0;
 }
 uint32_t VDisk::GetNodeCode(short index)
 {
-	char* val = new char[ADDR];	
-	disk.GetBytes(infoAddr[Sect::firstNode] + index * NODEDATA, val, ADDR);
-	return CharToInt32(val);
+	return CharToInt32(ReadInfo(Sect::nd_ncode, index));
 }
 uint32_t VDisk::GetChildAddr(short index)
 {
-	char* val = new char[ADDR];
-	disk.GetBytes(infoAddr[Sect::firstNode] + index * NODEDATA + infoAddr[Sect::nofs_addr], val, ADDR);
-	return CharToInt32(val);
+	return CharToInt32(ReadInfo(Sect::nd_addr, index));
 }
-char* VDisk::BuildNode(uint32_t nodeCode, uint32_t blockAddr, const char* name, bool isDir)
-{
-	try
-	{
-		char* newNode = new char[NODEDATA];
-		short ibyte = 0;
-		// Node code
-		for (; ibyte < ADDR; ++ibyte)
-			newNode[ibyte] = IntToChar(nodeCode)[ibyte];
-		// Metadata
-		newNode[ibyte++] = BuildFileMeta(isDir, 0, 0);
-		// Name
-		for (; ibyte < NODENAME; ++ibyte)
-			newNode[ibyte] = name[ibyte-ADDR-1];
-		// File address
-		for (; ibyte < ADDR; ++ibyte)					
-			newNode[ibyte] = IntToChar(blockAddr)[ibyte];
-		return newNode;
-	} 
-	catch(...)
-	{
-		return nullptr;
-	}
-}
-char VDisk::BuildFileMeta(bool isDir, bool inWriteMode, short inReadMode)
-{
-	std::bitset<8> metabitset(inReadMode);
-	if (isDir) metabitset.set(7);
-	if (inWriteMode) metabitset.set(4);
-	return static_cast<char>(metabitset.to_ulong());
-}
+
 void VDisk::InitTitleBlock(File* file)
 {
 	// todo: move the writing to the UpdateDisk, build data charset here
 	char* data = new char[BLOCK];
 
-	disk.SetBytes(file->GetData() + File::infoAddr[File::Sect::nextTB], IntToChar(file->GetData()), ADDR);
-	disk.SetBytes(file->GetData() + File::infoAddr[File::Sect::sizeVal], IntToChar(file->GetSize()), 2 * ADDR);
+	disk.SetBytes(file->GetData() + addrMap[Sect::fd_nextTB], IntToChar(file->GetData()), ADDR);
+	disk.SetBytes(file->GetData() + addrMap[Sect::fd_realSize], IntToChar(file->GetSize()), 2 * ADDR);
 
 	uint64_t totalBlocks = file->blocks.size();
 	for (int i = 0; i < totalBlocks; ++i)
-		disk.SetBytes(GetAbsoluteAddrInBlock(file->GetData(),File::infoAddr[File::Sect::firstAddr] + i * ADDR), IntToChar(file->blocks[i]), ADDR);
+		disk.SetBytes(GetAbsoluteAddrInBlock(file->GetData(),addrMap[Sect::fd_firstDB] + i * ADDR), IntToChar(file->blocks[i]), ADDR);
 	delete[] data;
 }
 /// <summary>
@@ -308,7 +358,7 @@ void VDisk::InitTitleBlock(File* file)
 /// </summary>
 uint64_t VDisk::GetAbsoluteAddrInBlock(uint32_t blockAddr, uint32_t offset) const
 {
-	return infoAddr[Sect::firstBlock] + blockAddr * BLOCK + offset;
+	return addrMap[Sect::s_blocks] + blockAddr * BLOCK + offset;
 }
 
 /*
@@ -365,7 +415,8 @@ File* VDisk::FMalloc(const char* name)
 		uint32_t freeBlock = TakeFreeBlocks();
 		File* f = new File(freeNode, freeBlock, name);
 		root->Add(name, (Node**) &f);
-		disk.SetBytes(infoAddr[Sect::firstNode] + freeNode, BuildNode(freeNode, freeBlock, name, 0), NODEDATA);
+		// !!! rework nodecode alloc
+		disk.SetBytes(addrMap[Sect::s_nodes] + freeNode, f->NodeToChar(0), NODEDATA);
 		InitTitleBlock(f);
 		UpdateDisk();
 		return f;
@@ -380,17 +431,17 @@ File* VDisk::FMalloc(const char* name)
 VDisk::VDisk(const std::string fileName):
 	name(fileName),
 	sizeInBytes(GetDiskSize(fileName)),
-	maxNode(CharToInt32(OpenAndReadInfo(fileName,infoAddr[Sect::maxNode],ADDR))),
+	maxNode(CharToInt32(OpenAndReadInfo(fileName,addrMap[Sect::dd_maxNode],ADDR))),
 	maxBlock(EstimateBlockCapacity(sizeInBytes))
 {
 	std::cout << "Disk \"" << name << "\" opened\n";
 	
 	disk.Open(fileName);
 	root = LoadHierarchy();
-	freeNodes = CharToInt32(ReadInfo(Sect::freeNodes));
-	freeBlocks = CharToInt32(ReadInfo(Sect::freeBlocks));
-	nextFreeBlock = CharToInt32(ReadInfo(Sect::nextFree));
-	infoAddr[Sect::firstBlock] = DISKDATA + maxNode * NODEDATA;
+	freeNodes = CharToInt32(ReadInfo(Sect::dd_fNodes));
+	freeBlocks = CharToInt32(ReadInfo(Sect::dd_fBlks));
+	nextFreeBlock = CharToInt32(ReadInfo(Sect::dd_nextFreeBlk));
+	addrMap[Sect::s_blocks] = DISKDATA + maxNode * NODEDATA;
 }
 /// Creating new disk 
 VDisk::VDisk(const std::string fileName, const uint64_t size) :
@@ -403,7 +454,7 @@ VDisk::VDisk(const std::string fileName, const uint64_t size) :
 	
 	disk.Open(fileName, true);
 	root = new Vertice<Node*>();
-	infoAddr[Sect::firstBlock] = DISKDATA + maxNode * NODEDATA;
+	addrMap[Sect::s_blocks] = DISKDATA + maxNode * NODEDATA;
 	if (!InitDisk())
 		std::cout << "Init failed!\n";
 }

@@ -14,20 +14,21 @@
 #define DISKDATA	ADDR*4			// Reserved for disk info, bytes
 #define NODEDATA	64							// Reserved per node, bytes
 #define NODEMETA	1							// Reserved per node metadata, bytes
-#define NODENAME	NODEDATA-2*ADDR-NODEMETA	// Address length, bytes
+#define NODENAME	NODEDATA-2*ADDR-NODEMETA	// Reserved per node name, bytes
 // todo: think of better const handling
 
-/* ---File------------------------------------------------------------------ */
+/* ---Node-|-File----------------------------------------------------------- */
 
 struct Node
 {
-private:
+protected:
 	std::string _name;			// Unmutable
 	uint32_t _nodeAddr;			// Unmutable
 public:
 	std::string GetName() const { return _name; };
 	uint32_t GetNode() const { return _nodeAddr; };
-	char* NodeToChar();
+
+	char* NodeToChar(uint32_t nodeCode);
 
 	Node(uint32_t nodeAddr, std::string name);
 };
@@ -42,16 +43,11 @@ private:
 	uint64_t _realSize;			// Changed after writing, used for calculating position for write data
 	bool _writemode;
 	short _readmode_count;
+
+	char BuildFileMeta();
 public:
 	std::vector<uint32_t> blocks;				// Remember: addresses are ADDR length
-	enum class Sect
-	{
-		nextTB,		// Address of the next title block, if such exists; address of the current block otherwise
-		sizeVal,	// Real size of the file (not takes into account reserved space)
-		firstAddr	// Address of the first data block
-	};
-	static std::map<Sect, uint32_t> infoAddr;	// Offsets in bytes for data sections
-
+	
 	uint32_t GetData() const { return *blocks.begin(); };
 	uint64_t GetSize() const { return _realSize; };
 	uint32_t SetSize(uint64_t value) { _realSize = value; };
@@ -63,11 +59,13 @@ public:
 	size_t ReadNext(char* buffer);		// TBD
 	size_t WriteData(char * buffer);	// TBD
 
+	char* NodeToChar(uint32_t nodeCode);
+
 	File() = delete;
 	File(uint32_t nodeAddr, uint32_t blockAddr, std::string name, bool writemode = false, short readmode_count = 0);
 };
 
-/* ---VDisk----------------------------------------------------------------- */
+/* ---BinDisk--------------------------------------------------------------- */
 
 class BinDisk : std::fstream 
 {
@@ -81,39 +79,47 @@ public:
 	void Close();
 };
 
+/* ---VDisk----------------------------------------------------------------- */
+
 /// <summary>
 /// VDisk emulates a physical storage within a physical file and is responsible for low-level data management.
 /// Basically, VDisk is only intended to be used internally by the VFS class.
-/// The data is reached through the fstream 'disk'; it's generally open while VDisk exists.
 /// <para> For the details on the file format, see the README.md </para>
 /// </summary>
 class VDisk
 {
 private:
-
-	BinDisk disk;							// Main data in/out stream
-	Vertice<Node*>* root;
-
+	// Aliases for all key data sections
 	enum class Sect 
 	{ 
-		freeNodes,
-		freeBlocks, 
-		maxNode, 
-		nextFree,
-		firstNode,
-		firstBlock,
+		s_data,
+		s_nodes,
+		s_blocks,
 
-		nofs_ncode,
-		nofs_meta,
-		nofs_name,
-		nofs_addr
+		dd_fNodes,
+		dd_fBlks, 
+		dd_maxNode,
+		dd_nextFreeBlk,
+
+		nd_ncode,
+		nd_meta,
+		nd_name,
+		nd_addr,
+
+		fd_nextTB,		// Address of the next title block, if such exists; address of the current block otherwise
+		fd_realSize,	// Real size of the file (not takes into account reserved space)
+		fd_firstDB		// Address of the first data block
 	};
-	static std::map<Sect, uint32_t> infoAddr;	// Offsets in bytes for data sections
+	// Offsets for all key data sections in bytes
+	static std::map<Sect, uint32_t> addrMap;
+
+	BinDisk disk;					// Main data in/out stream
+	Vertice<Node*>* root;			// Hierarchy & search
 
 	const std::string name;
-	const uint64_t sizeInBytes;
-	const uint32_t maxNode;						// The limit on files
-	const uint32_t maxBlock;					// The limit on blocks
+	const uint64_t sizeInBytes;		// Reserved size provided during creation
+	const uint32_t maxNode;			// The limit on files
+	const uint32_t maxBlock;		// The limit on blocks
 	uint32_t freeNodes;
 	uint32_t freeBlocks;
 	uint32_t nextFreeBlock;
@@ -125,7 +131,7 @@ private:
 	void WriteHierarchy();
 	bool InitDisk();									// Format new VDisk
 	bool UpdateDisk();									// Write data into the associated file
-	char* ReadInfo(Sect info);							// Get raw data from a specific Section
+	char* ReadInfo(Sect info, uint32_t i = 0);			// Get raw data from a specific Section
 
 	bool IsEmptyNode(short index);
 	bool IsFileNode(short index);
