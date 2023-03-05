@@ -500,6 +500,20 @@ bool VFS::Unmount(const std::string& diskName)
 	std::cout << "Disk \"" << diskName << "\" not found\n";
 	return false;
 }
+VDisk* VFS::GetMostFreeDisk()
+{
+	if (!disks.size()) return nullptr;
+	VDisk* chosenDisk = nullptr;
+	for (const auto& disk : disks)
+	{
+		uint32_t cur_nodes = disk->GetNodesLeft();
+		uint32_t cur_blocks = disk->GetBlocksLeft();
+		if (!cur_nodes || !cur_blocks) continue;
+		if (disk->GetBlocksLeft() > chosenDisk->GetBlocksLeft()) chosenDisk = disk;
+	}
+	return chosenDisk;
+}
+
 /// <summary>
 /// Opens the file in readonly mode. 
 /// </summary>
@@ -527,9 +541,8 @@ File* VFS::Create(const char* name)
 	{
 		file = disk->SeekFile(name);
 		if (file && !(file->IsBusy())) return file;
-		if (disk->GetBlocksLeft() > mostFreeDisk->GetBlocksLeft()) mostFreeDisk = disk;
 	}
-	file = mostFreeDisk->FMalloc(name);
+	file = GetMostFreeDisk()->FMalloc(name);
 	return file;
 }
 size_t VFS::Read(File* f, char* buff, size_t len)

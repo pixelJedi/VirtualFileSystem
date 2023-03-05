@@ -131,7 +131,8 @@ public:
 
 	std::string GetName() const { return name; };
 	uint64_t GetSizeInBytes() const{ return sizeInBytes; };
-	uint32_t GetBlocksLeft() const { return freeBlocks;	};
+	uint32_t GetBlocksLeft() const { return freeBlocks; };
+	uint32_t GetNodesLeft() const { return freeNodes; };
 
 	std::string PrintSpaceLeft() const;
 
@@ -171,6 +172,7 @@ private:
 public:
 	bool MountOrCreate(std::string& diskName);
 	bool Unmount(const std::string& diskName);
+	VDisk* GetMostFreeDisk();
 
 	File* Open(const char* name) override;					// TBD
 	File* Create(const char* name) override;				// TBD
