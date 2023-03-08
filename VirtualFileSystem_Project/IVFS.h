@@ -3,6 +3,7 @@
 #include <vector>
 #include <fstream>
 #include <map>
+#include <cmath>
 #include "Vertice.h"
 
 /* ---Commmon--------------------------------------------------------------- */
@@ -50,9 +51,13 @@ private:
 	char BuildFileMeta();
 public:
 	
+	std::string GetFather() { return _fathername; };
 	uint32_t GetData() const { return *blocks.begin(); };
 	uint64_t GetSize() const { return _realSize; };
-	uint64_t GetBlocksCount() const { return blocks.size(); };
+	uint32_t CountDataBlocks() const { return blocks.size(); };
+	uint32_t GetCurDataBlock() const;
+	uint32_t GetDataBlock(uint32_t index) const;
+	uint32_t NotEnoughBlocksFor(size_t dataLength);
 
 	bool IsBusy() { return _writemode || _readmode_count; };
 	bool IsWriteMode() { return _writemode; };
@@ -136,6 +141,7 @@ private:
 	
 	uint32_t TakeFreeNode();
 	uint32_t TakeFreeBlocks();
+	uint32_t TakeFreeBlock();
 
 	Vertice<Node*>* LoadHierarchy(uint32_t start_index = 0);
 	void WriteHierarchy();
@@ -166,7 +172,9 @@ public:
 	std::string PrintSpaceLeft() const;
 
 	File* SeekFile(const char* name) const;
+	uint32_t AllocateNew(File* f, uint32_t blocksMissing);
 	File* FMalloc(const char* name);						// Reserves space for a new file
+	void WriteNext(File* f, char* buff, size_t dataWrote);
 
 	VDisk() = delete;
 	VDisk(const std::string fileName);						// Open existing VDisk
@@ -198,10 +206,12 @@ class VFS : IVFS
 private:
 	std::vector <VDisk*> disks;
 	bool IsValidSize(size_t size);
+	size_t TruncDataLength(size_t length, uint32_t blocksCount);
 public:
 	bool MountOrCreate(std::string& diskName);
 	bool Unmount(const std::string& diskName);
 	VDisk* GetMostFreeDisk();
+	VDisk* GetDisk(std::string name);
 
 	File* Open(const char* name) override;					// TBD
 	File* Create(const char* name) override;
