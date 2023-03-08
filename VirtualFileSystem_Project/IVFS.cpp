@@ -35,10 +35,11 @@ char* Node::NodeToChar(uint32_t nodeCode)
 }
 //char* VDisk::BuildNode(uint32_t blockAddr, const char* name, bool isDir)
 
-Node::Node(uint32_t nodeAddr, std::string name)
+Node::Node(uint32_t nodeAddr, std::string name, std::string fathername)
 {
 	_name = name;
 	_nodeAddr = nodeAddr;
+	_fathername = fathername;
 }
 
 void File::AddReader() 
@@ -115,7 +116,7 @@ char* File::NodeToChar(uint32_t nodeCode)
 	}
 }
 
-File::File(uint32_t nodeAddr, uint32_t blockAddr, std::string name, bool writemode, short readmode_count) : Node(nodeAddr, name)
+File::File(uint32_t nodeAddr, uint32_t blockAddr, std::string name, std::string fathername, bool writemode, short readmode_count) : Node(nodeAddr, name, fathername)
 {
 	_realSize = 0;
 	_writemode = writemode;
@@ -204,14 +205,14 @@ Vertice<Node*>* VDisk::LoadHierarchy(uint32_t start_index)
 	{
 		root = new Vertice<Node*>();
 		// todo: PlainToVerticeNode from here ->
-		char* name = ReadInfo(Sect::nd_name,i);
+		char* fname = ReadInfo(Sect::nd_name,i);
 		uint32_t blockaddr = GetChildAddr(i);
-		Node* node = IsFileNode(i) ? new File(i,blockaddr,name) : new Node(i, name);
-		root->Add(std::string{name}, &node);
+		Node* node = IsFileNode(i) ? new File(i,blockaddr,fname,this->name) : new Node(i, fname,this->name);
+		root->Add(std::string{fname}, &node);
 		// < ...to here
 		if (!IsFileNode(i))
 		{
-			root->BindNewTreeToChild(name, LoadHierarchy(GetChildAddr(i)));
+			root->BindNewTreeToChild(fname, LoadHierarchy(GetChildAddr(i)));
 		}
 	}
 
@@ -267,15 +268,62 @@ bool VDisk::UpdateDisk()
 	}
 	return true;
 }
+
+std::tuple<uint32_t, uint32_t> VDisk::GetPosLen(Sect info, uint32_t i)
+{
+	uint32_t pos, len;
+	switch (info)
+	{
+	case Sect::s_nodes:
+		pos = addrMap[info] + i * NODEDATA;
+		len = NODEDATA;
+		break;
+	case Sect::s_blocks:
+		pos = addrMap[info] + i * BLOCK;
+		len = BLOCK;
+		break;
+	case Sect::dd_fNodes:
+	case Sect::dd_fBlks:
+	case Sect::dd_maxNode:
+	case Sect::dd_nextFreeBlk:
+		pos = addrMap[Sect::s_data] + addrMap[info];
+		len = ADDR;
+		break;
+	case Sect::nd_ncode:
+	case Sect::nd_addr:
+		pos = addrMap[Sect::s_nodes] + i * NODEDATA + addrMap[info];
+		len = ADDR;
+		break;
+	case Sect::nd_meta:
+		pos = addrMap[Sect::s_nodes] + i * NODEDATA + addrMap[info];
+		len = NODEMETA;
+		break;
+	case Sect::nd_name:
+		pos = addrMap[Sect::s_nodes] + i * NODEDATA + addrMap[info];
+		len = NODENAME;
+		break;
+	case Sect::fd_nextTB:
+	case Sect::fd_firstDB:
+		pos = addrMap[Sect::s_blocks] + i * BLOCK + addrMap[info];
+		len = ADDR;
+		break;
+	case Sect::fd_realSize:
+		pos = addrMap[Sect::s_blocks] + i * BLOCK + addrMap[info];
+		len = 2 * ADDR;
+		break;
+	default:
+		throw std::invalid_argument("The <info> parameter has no address assigned");
+	};
+	return std::make_tuple(pos,len);
+}
 /// <summary>
 /// Wraps the GetBytes for easy access to specific data segments
 /// </summary>
 char* VDisk::ReadInfo(Sect info, uint32_t i)
 {
-	uint32_t pos;
-	uint32_t len;
-
-	switch (info)
+	uint32_t pos, len;
+	std::tie(pos, len) = GetPosLen(info, i);
+	/*switch (info)
 	{
 	case Sect::s_nodes:
 		pos = addrMap[info] + i * NODEDATA;
@@ -316,7 +364,7 @@ char* VDisk::ReadInfo(Sect info, uint32_t i)
 		break;
 	default:
 		return nullptr;
-	};
+	};*/
 	char* bytes = new char[len];
 	disk.GetBytes(pos, bytes, len);
 	return bytes;
@@ -363,18 +411,18 @@ uint32_t VDisk::GetChildAddr(short index)
 	return CharToInt32(ReadInfo(Sect::nd_addr, index));
 }
 
-void VDisk::InitTitleBlock(File* file)
+void VDisk::InitTitleBlock(File* file, uint32_t TBAddr)
 {
 	// todo: move the writing to the UpdateDisk, build data charset here
-	char* data = new char[BLOCK];
+	//char* data = new char[BLOCK];
 
-	disk.SetBytes(file->GetData() + addrMap[Sect::fd_nextTB], IntToChar(file->GetData()), ADDR);
-	disk.SetBytes(file->GetData() + addrMap[Sect::fd_realSize], IntToChar(file->GetSize()), 2 * ADDR);
+	disk.SetBytes(TBAddr + addrMap[Sect::fd_nextTB], IntToChar(TBAddr), ADDR);
+	disk.SetBytes(TBAddr + addrMap[Sect::fd_realSize], IntToChar(file->GetSize()), 2 * ADDR);
 
-	uint64_t totalBlocks = file->blocks.size();
+	uint64_t totalBlocks = file->GetBlocksCount();
 	for (int i = 0; i < totalBlocks; ++i)
 		disk.SetBytes(GetAbsoluteAddrInBlock(file->GetData(),addrMap[Sect::fd_firstDB] + i * ADDR), IntToChar(file->blocks[i]), ADDR);
-	delete[] data;
+	//delete[] data;
 }
 /// <summary>
 /// Byte number from the beginning of the disk
@@ -436,9 +484,9 @@ File* VDisk::FMalloc(const char* name)
 	{
 		uint32_t freeNode = TakeFreeNode();
 		uint32_t freeBlock = TakeFreeBlocks();
-		File* f = new File(freeNode, freeBlock, name);
+		File* f = new File(freeNode, freeBlock, name, this->name);
 		root->Add(name, (Node**) &f);
-		InitTitleBlock(f);
+		InitTitleBlock(f, f->GetData());
 		UpdateDisk();
 		return f;
 	}

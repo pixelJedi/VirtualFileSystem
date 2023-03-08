@@ -22,15 +22,16 @@
 struct Node
 {
 protected:
-	std::string _name;			// Unmutable
-	uint32_t _nodeAddr;			// Unmutable
+	std::string _fathername;
+	std::string _name;
+	uint32_t _nodeAddr;
 public:
 	std::string GetName() const { return _name; };
 	uint32_t GetNode() const { return _nodeAddr; };
 
 	char* NodeToChar(uint32_t nodeCode);
 
-	Node(uint32_t nodeAddr, std::string name);
+	Node(uint32_t nodeAddr, std::string name, std::string fathername);
 };
 /// <summary>
 /// The complex pointer used for locating file datablocks on VDisk.
@@ -44,13 +45,14 @@ private:
 	bool _writemode;
 	short _readmode_count;
 
+	std::vector<uint32_t> blocks;	// Remember: addresses are ADDR length
+
 	char BuildFileMeta();
 public:
-	std::vector<uint32_t> blocks;	// Remember: addresses are ADDR length
 	
 	uint32_t GetData() const { return *blocks.begin(); };
 	uint64_t GetSize() const { return _realSize; };
-	uint32_t SetSize(uint64_t value) { _realSize = value; };
+	uint64_t GetBlocksCount() const { return blocks.size(); };
 
 	bool IsBusy() { return _writemode || _readmode_count; };
 	bool IsWriteMode() { return _writemode; };
@@ -66,7 +68,7 @@ public:
 	char* NodeToChar(uint32_t nodeCode);
 
 	File() = delete;
-	File(uint32_t nodeAddr, uint32_t blockAddr, std::string name, bool writemode = false, short readmode_count = 0);
+	File(uint32_t nodeAddr, uint32_t blockAddr, std::string name, std::string fathername, bool writemode = false, short readmode_count = 0);
 };
 
 /* ---BinDisk--------------------------------------------------------------- */
@@ -141,6 +143,7 @@ private:
 	bool InitDisk();									// Format new VDisk
 	bool UpdateDisk();									// Write data into the associated file
 	
+	std::tuple<uint32_t, uint32_t> GetPosLen(Sect info, uint32_t i);
 	char* ReadInfo(Sect info, uint32_t i = 0);			// Get raw data from a specific Section
 	
 	bool IsEmptyNode(short index);
@@ -150,7 +153,7 @@ private:
 
 	char* BuildNode(uint32_t nodeCode, uint32_t blockAddr, const char* name, bool isDir);
 	char BuildFileMeta(bool isDir, bool inWriteMode, short inReadMode);
-	void InitTitleBlock(File* file);
+	void InitTitleBlock(File* file, uint32_t TBAddr);
 
 	uint64_t GetAbsoluteAddrInBlock(uint32_t blockAddr, uint32_t offset) const;
 
