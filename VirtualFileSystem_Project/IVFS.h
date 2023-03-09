@@ -4,6 +4,7 @@
 #include <fstream>
 #include <map>
 #include <cmath>
+#include <algorithm>
 #include "Vertice.h"
 
 /* ---Commmon--------------------------------------------------------------- */
@@ -46,29 +47,38 @@ private:
 	bool _writemode;
 	short _readmode_count;
 
+	uint32_t _mainTB;
+	uint32_t _lastTB;
+
 	std::vector<uint32_t> blocks;	// Remember: addresses are ADDR length
 
 	char BuildFileMeta();
 public:
 	
 	std::string GetFather() { return _fathername; };
-	uint32_t GetData() const { return *blocks.begin(); };
+	uint32_t GetMainTB() const { return _mainTB; };
+	uint32_t GetLastTB() const { return _lastTB; };
+	void SetLastTB(uint32_t addr) { _lastTB = addr; };
 	uint64_t GetSize() const { return _realSize; };
+	void IncreaseSize(uint32_t val) { _realSize += val; };
 	uint32_t CountDataBlocks() const { return blocks.size(); };
 	uint32_t GetCurDataBlock() const;
-	uint32_t GetDataBlock(uint32_t index) const;
-	uint32_t NotEnoughBlocksFor(size_t dataLength);
+	uint32_t GetDataBlock(uint32_t index) const { return blocks[index]; };
+	uint32_t GetLastDataBlock() const { return blocks.back(); };
+	size_t GetRemainingSpace() const;
+	uint32_t GetNextSlot() const; 
+	uint32_t EstimateBlocksNeeded(size_t dataLength) const;
 
 	bool IsBusy() { return _writemode || _readmode_count; };
 	bool IsWriteMode() { return _writemode; };
-	short GetReaders() { return _readmode_count; };
 	void FlipWriteMode() { _writemode = !_writemode; };
+	short GetReaders() { return _readmode_count; };
 	void AddReader();
 	void RemoveReader();
+	void AddDataBlock(uint32_t datablock);
 
 	uint64_t Fseekp() const;
 	size_t ReadNext(char* buffer);		// TBD
-	void WriteNext(char* buffer, size_t & count);
 
 	char* NodeToChar(uint32_t nodeCode);
 
@@ -141,7 +151,8 @@ private:
 	
 	uint32_t TakeFreeNode();
 	uint32_t TakeFreeBlocks();
-	uint32_t TakeFreeBlock();
+	void UpdateBlockCounters(uint32_t count = 0);
+	uint32_t TakeFreeBlock(File* f);
 
 	Vertice<Node*>* LoadHierarchy(uint32_t start_index = 0);
 	void WriteHierarchy();
@@ -159,7 +170,10 @@ private:
 
 	char* BuildNode(uint32_t nodeCode, uint32_t blockAddr, const char* name, bool isDir);
 	char BuildFileMeta(bool isDir, bool inWriteMode, short inReadMode);
-	void InitTitleBlock(File* file, uint32_t TBAddr);
+	void InitTitleBlock(File* file, uint32_t newTBAddr);
+	bool ExpandIfLT(File* f, size_t len);
+	uint32_t AllocateNew(File* f, uint32_t nBlocks);
+	bool NoSlotsInTB(File* f);
 
 	uint64_t GetAbsoluteAddrInBlock(uint32_t blockAddr, uint32_t offset) const;
 
@@ -172,9 +186,9 @@ public:
 	std::string PrintSpaceLeft() const;
 
 	File* SeekFile(const char* name) const;
-	uint32_t AllocateNew(File* f, uint32_t blocksMissing);
 	File* FMalloc(const char* name);						// Reserves space for a new file
-	void WriteNext(File* f, char* buff, size_t dataWrote);
+	void WriteNext(File* f, char* buff, size_t& dataWrote);
+	size_t WriteInFile(File* f, char* buff, size_t len);
 
 	VDisk() = delete;
 	VDisk(const std::string fileName);						// Open existing VDisk
@@ -206,7 +220,6 @@ class VFS : IVFS
 private:
 	std::vector <VDisk*> disks;
 	bool IsValidSize(size_t size);
-	size_t TruncDataLength(size_t length, uint32_t blocksCount);
 public:
 	bool MountOrCreate(std::string& diskName);
 	bool Unmount(const std::string& diskName);

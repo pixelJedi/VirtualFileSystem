@@ -42,7 +42,6 @@ Node::Node(uint32_t nodeAddr, std::string name, std::string fathername)
 	_fathername = fathername;
 }
 
-
 char File::BuildFileMeta()
 {
 	std::bitset<8> metabitset(_readmode_count);
@@ -59,11 +58,15 @@ void File::RemoveReader()
 	_readmode_count = _readmode_count > 0 ? --_readmode_count : 0;
 }
 
+void File::AddDataBlock(uint32_t datablock)
+{
+	blocks.push_back(datablock);
+}
 ///
 /// <returns>Number of the first empty byte from the last block's beginning</returns>
 uint64_t File::Fseekp() const
 {	
-	return uint64_t(GetSize() % BLOCK + 1);
+	return uint64_t(_realSize % BLOCK + 1);
 }
 
 /// <summary>
@@ -79,9 +82,20 @@ uint32_t File::GetCurDataBlock() const
 {
 	return uint32_t(_realSize/BLOCK + 1);
 }
-uint32_t File::NotEnoughBlocksFor(size_t dataLength)
+
+size_t File::GetRemainingSpace() const
 {
-	long long difference = dataLength - (CountDataBlocks() * BLOCK - _realSize);
+	return size_t(CountDataBlocks() * BLOCK - _realSize);
+}
+
+uint32_t File::GetNextSlot() const
+{
+	return (CountDataBlocks() + 2) % (BLOCK / ADDR - 1) + 1;
+}
+
+uint32_t File::EstimateBlocksNeeded(size_t dataLength) const
+{
+	long long difference = dataLength - GetRemainingSpace();
 	return difference > 0 ? uint32_t(std::ceil(difference * 1.0 / BLOCK)) : 0;
 }
 
@@ -115,6 +129,8 @@ File::File(uint32_t nodeAddr, uint32_t blockAddr, std::string name, std::string 
 	_realSize = 0;
 	_writemode = writemode;
 	_readmode_count = readmode_count;
+	_lastTB = _mainTB = blockAddr;
+	blockAddr++;
 
 	for(int i = 0;i<CLUSTER;++i)
 		blocks.push_back(blockAddr+i);
@@ -388,12 +404,23 @@ uint32_t VDisk::TakeFreeBlocks()
 	freeBlocks -= CLUSTER;
 	return curFree;
 }
-uint32_t VDisk::TakeFreeBlock()
+void VDisk::UpdateBlockCounters(uint32_t count)
 {
+	nextFreeBlock+= count;
+	freeBlocks-=count;
+}
+uint32_t VDisk::TakeFreeBlock(File* f)
+{
+	uint32_t curFree = 0;
 	if (!freeBlocks) throw std::logic_error("Failed to get a free block");
-	uint32_t curFree = nextFreeBlock;
-	++nextFreeBlock;
-	--freeBlocks;
+	f->AddDataBlock(nextFreeBlock);
+	UpdateBlockCounters();
+	if (!NoSlotsInTB(f))
+	{
+		if (!freeBlocks) throw std::logic_error("Failed to get a new title block");
+		InitTitleBlock(f, nextFreeBlock + 1);
+		UpdateBlockCounters();
+	}
 	return curFree;
 }
 
@@ -414,18 +441,41 @@ uint32_t VDisk::GetChildAddr(short index)
 	return CharToInt32(ReadInfo(Sect::nd_addr, index));
 }
 
-void VDisk::InitTitleBlock(File* file, uint32_t TBAddr)
+void VDisk::InitTitleBlock(File* file, uint32_t newTBAddr)
 {
 	// todo: move the writing to the UpdateDisk, build data charset here
 	//char* data = new char[BLOCK];
-	/*
-	disk.SetBytes(TBAddr + addrMap[Sect::fd_nextTB], IntToChar(TBAddr), ADDR);
-	disk.SetBytes(TBAddr + addrMap[Sect::fd_realSize], IntToChar(file->GetSize()), 2 * ADDR);
+	disk.SetBytes(file->GetLastTB() + addrMap[Sect::fd_nextTB], IntToChar(newTBAddr), ADDR);
+	file->SetLastTB(newTBAddr);
+	disk.SetBytes(newTBAddr + addrMap[Sect::fd_nextTB], IntToChar(newTBAddr), ADDR);
+	disk.SetBytes(newTBAddr + addrMap[Sect::fd_realSize], IntToChar(file->GetSize()), 2 * ADDR);
+	disk.SetBytes(newTBAddr + addrMap[Sect::fd_firstDB], IntToChar(newTBAddr), ADDR);
 
 	uint64_t totalBlocks = file->CountDataBlocks();
 	for (int i = 0; i < totalBlocks; ++i)
-		disk.SetBytes(GetAbsoluteAddrInBlock(file->GetData(), addrMap[Sect::fd_firstDB] + i * ADDR), IntToChar(file->GetDataBlock(i)), ADDR);
-	*///delete[] data;
+		disk.SetBytes(GetAbsoluteAddrInBlock(file->GetMainTB(), addrMap[Sect::fd_firstDB] + i * ADDR), IntToChar(file->GetDataBlock(i)), ADDR);
+	//delete[] data;
+}
+bool VDisk::ExpandIfLT(File* f, size_t len)
+{
+	uint32_t freeSpace = f->GetRemainingSpace();
+	if (freeSpace < len)
+	{
+		uint32_t required = f->EstimateBlocksNeeded(len);
+		while (required)
+		{
+			try
+			{
+				TakeFreeBlock(f);
+				--required;
+			}
+			catch (...)
+			{
+				return true;
+			}
+		}
+	}
+	return false;
 }
 /// <summary>
 /// Byte number from the beginning of the disk
@@ -477,12 +527,28 @@ File* VDisk::SeekFile(const char* name) const
 		return nullptr;
 	}
 }
-uint32_t VDisk::AllocateNew(File* f, uint32_t blocksMissing)
+uint32_t VDisk::AllocateNew(File* f, uint32_t nBlocks)
 {
-	// TBD
-	return uint32_t();
+	uint32_t allocated = 0;
+	while (allocated!=nBlocks)
+	{
+		try
+		{
+			TakeFreeBlock(f);
+			++allocated;
+		}
+		catch (...)
+		{
+			break;
+		}
+	}
+	return allocated;
 }
-
+bool VDisk::NoSlotsInTB(File* f)
+{
+	// 2 is the difference between MainTB and SecondaryTB tech data length in bytes
+	return (f->CountDataBlocks() + 2) % BLOCK == 0;
+}
 /// <summary>
 /// Reserves and initializes space for a new file. 
 /// Writes all data required to the disk.
@@ -495,7 +561,7 @@ File* VDisk::FMalloc(const char* name)
 		uint32_t freeBlock = TakeFreeBlocks();
 		File* f = new File(freeNode, freeBlock, name, this->name);
 		root->Add(name, (Node**) &f);
-		InitTitleBlock(f, f->GetData());
+		InitTitleBlock(f, f->GetMainTB());
 		UpdateDisk();
 		return f;
 	}
@@ -509,17 +575,34 @@ File* VDisk::FMalloc(const char* name)
 /// Writes the next block of data from the buffer
 /// </summary>
 /// <returns>The number of bytes that are left to write</returns>
-void VDisk::WriteNext(File* f, char* buff, size_t dataWrote)
+void VDisk::WriteNext(File* f, char* buff, size_t& dataWrote)
 {
-	// Use the WritePtr() to get the starting position
-	// Remember: first and last blocks can be incomplete
-	/*
-	1. Понять, в каком блоке находится указатель через realsize
-	2. Получить указатель внутри блока - Fseekp
-	3. Посчитать, сколько символов можно вписать до конца блока
-	4. Записать символы
-	5. Увеличить realsize
-	*/
+	uint32_t len = BLOCK - f->Fseekp();
+	char* datablock = &buff[len];
+	uint32_t pos = std::get<0>(GetPosLen(Sect::s_blocks,f->GetLastDataBlock()));
+	disk.SetBytes(pos, datablock, len);
+	delete datablock;
+	f->IncreaseSize(len);
+	dataWrote += len;
+}
+
+size_t VDisk::WriteInFile(File* f, char* buff, size_t len)
+{
+	ExpandIfLT(f, len);
+	len = f->GetRemainingSpace();
+	size_t wrote = 0;
+	while (wrote!=len)
+	{
+		try
+		{
+			WriteNext(f, buff, wrote);
+		}
+		catch (...)
+		{
+			break;
+		}
+	}
+	return wrote;
 }
 
 /// Loading existing disk 
@@ -566,11 +649,6 @@ VDisk::~VDisk()
 bool VFS::IsValidSize(size_t size)
 {
 	return (size >= (DISKDATA + NODEDATA + CLUSTER * BLOCK) && size <= UINT32_MAX);
-}
-size_t VFS::TruncDataLength(size_t length, uint32_t blocksCount)
-{
-	// TBD
-	return size_t();
 }
 
 bool VFS::MountOrCreate(std::string& diskName)
@@ -720,24 +798,7 @@ size_t VFS::Write(File* f, char* buff, size_t len)
 {
 	VDisk* vd = GetDisk(f->GetFather());
 	if (!vd) throw std::runtime_error("No disk found for the file");
-
-	size_t validatedLen = len;
-	uint32_t blocksMissing = f->NotEnoughBlocksFor(len);
-	if (blocksMissing)
-	{
-		uint32_t blocksAllocated = vd->AllocateNew(f, blocksMissing);
-		if (blocksMissing != blocksAllocated)
-		{
-			validatedLen = TruncDataLength(len, blocksAllocated - blocksMissing);
-		}
-	}
-	size_t dataWrote = 0;
-	while (dataWrote != validatedLen)
-	{
-		uint32_t lastBlock = f->GetCurDataBlock();
-		vd->WriteNext(f, buff, dataWrote);
-	}
-	return dataWrote;
+	return vd->WriteInFile(f, buff, len);
 }
 void VFS::Close(File* f)
 {
