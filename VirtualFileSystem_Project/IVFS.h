@@ -5,6 +5,7 @@
 #include <map>
 #include <cmath>
 #include <algorithm>
+#include <memory>
 #include "Vertice.h"
 
 /* ---Commmon--------------------------------------------------------------- */
@@ -31,10 +32,25 @@ public:
 	std::string GetName() const { return _name; };
 	uint32_t GetNode() const { return _nodeAddr; };
 
-	char* NodeToChar(uint32_t nodeCode);
+	virtual char* NodeToChar(uint32_t nodeCode) = 0;
 
 	Node(uint32_t nodeAddr, std::string name, std::string fathername);
+	virtual ~Node() {};
+
+	friend std::ostream& operator<<(std::ostream& s, const Node& node);
 };
+
+struct Dir : Node
+{
+	char* NodeToChar(uint32_t nodeCode);
+
+	Dir() = delete;
+	Dir(uint32_t nodeAddr, std::string name, std::string fathername);
+	~Dir() {};
+};
+
+std::ostream& operator<<(std::ostream& s, const Node& node);
+
 /// <summary>
 /// The complex pointer used for locating file datablocks on VDisk.
 /// On VDisk File is represented by node in node area and by data blocks in data area.
@@ -68,11 +84,11 @@ public:
 	size_t GetRemainingSpace() const;
 	uint32_t GetNextSlot() const; 
 	uint32_t EstimateBlocksNeeded(size_t dataLength) const;
-
 	bool IsBusy() { return _writemode || _readmode_count; };
 	bool IsWriteMode() { return _writemode; };
-	void FlipWriteMode() { _writemode = !_writemode; };
 	short GetReaders() { return _readmode_count; };
+
+	void FlipWriteMode();
 	void AddReader();
 	void RemoveReader();
 	void AddDataBlock(uint32_t datablock);
@@ -84,6 +100,7 @@ public:
 
 	File() = delete;
 	File(uint32_t nodeAddr, uint32_t blockAddr, std::string name, std::string fathername, bool writemode = false, short readmode_count = 0);
+	~File() {};
 };
 
 /* ---BinDisk--------------------------------------------------------------- */
@@ -134,9 +151,6 @@ private:
 	// Offsets for all key data sections in bytes
 	static std::map<Sect, uint32_t> addrMap;
 
-	BinDisk disk;					// Main data in/out stream
-	Vertice<Node*>* root;			// Hierarchy & search
-
 	const std::string name;
 	const uint64_t sizeInBytes;		// Reserved size provided during creation
 	const uint32_t maxNode;			// The limit on files
@@ -144,6 +158,12 @@ private:
 	uint32_t freeNodes;
 	uint32_t freeBlocks;
 	uint32_t nextFreeBlock;
+
+	BinDisk disk;					// Main data in/out stream
+	Vertice<Node*>* root;			// Hierarchy & search
+
+	Vertice<Node*>* LoadHierarchy(uint32_t start_index = 0);
+	void WriteHierarchy();
 
 	uint32_t EstimateNodeCapacity(size_t size) const;
 	uint32_t EstimateBlockCapacity(size_t size) const;
@@ -153,9 +173,6 @@ private:
 	uint32_t TakeFreeBlocks();
 	void UpdateBlockCounters(uint32_t count = 0);
 	uint32_t TakeFreeBlock(File* f);
-
-	Vertice<Node*>* LoadHierarchy(uint32_t start_index = 0);
-	void WriteHierarchy();
 	
 	bool InitDisk();									// Format new VDisk
 	bool UpdateDisk();									// Write data into the associated file
@@ -168,9 +185,7 @@ private:
 	uint32_t GetNodeCode(short index);
 	uint32_t GetChildAddr(short index);
 
-	char* BuildNode(uint32_t nodeCode, uint32_t blockAddr, const char* name, bool isDir);
-	char BuildFileMeta(bool isDir, bool inWriteMode, short inReadMode);
-	void InitTitleBlock(File* file, uint32_t newTBAddr);
+	void InitTB(File* file, uint32_t newAddr);
 	bool ExpandIfLT(File* f, size_t len);
 	uint32_t AllocateNew(File* f, uint32_t nBlocks);
 	bool NoSlotsInTB(File* f);
@@ -183,12 +198,12 @@ public:
 	uint32_t GetBlocksLeft() const { return freeBlocks; };
 	uint32_t GetNodesLeft() const { return freeNodes; };
 
-	std::string PrintSpaceLeft() const;
-
 	File* SeekFile(const char* name) const;
-	File* FMalloc(const char* name);						// Reserves space for a new file
-	void WriteNext(File* f, char* buff, size_t& dataWrote);
+	File* CreateFile(const char* name);						// Reserves space for a new file
 	size_t WriteInFile(File* f, char* buff, size_t len);
+
+	std::string PrintSpaceLeft() const;
+	void PrintTree();
 
 	VDisk() = delete;
 	VDisk(const std::string fileName);						// Open existing VDisk
@@ -220,16 +235,16 @@ class VFS : IVFS
 private:
 	std::vector <VDisk*> disks;
 	bool IsValidSize(size_t size);
+	VDisk* GetMostFreeDisk();
+	std::vector<VDisk*>::iterator GetDisk(std::string name);
 public:
 	bool MountOrCreate(std::string& diskName);
 	bool Unmount(const std::string& diskName);
-	VDisk* GetMostFreeDisk();
-	VDisk* GetDisk(std::string name);
 
 	File* Open(const char* name) override;					// TBD
 	File* Create(const char* name) override;
 	size_t Read(File* f, char* buff, size_t len) override;	// TBD
-	size_t Write(File* f, char* buff, size_t len) override;	// <-- working here
+	size_t Write(File* f, char* buff, size_t len) override;
 	void Close(File* f) override;
 
 	VFS();
@@ -246,5 +261,3 @@ char* StrToChar(const std::string data);
 uint32_t CharToInt32(const char* bytes);
 
 uint64_t GetDiskSize(std::string filename);	// Check real size of an existing file
-
-void PrintVerticeTree(Vertice<Node>* v, uint32_t count = 0);
