@@ -3,7 +3,7 @@
 #include <string>
 #include <sstream>
 #include <memory>
-
+#include "IVFS.h"
 template <typename T>
 class Vertice
 {
@@ -20,7 +20,7 @@ public:
 	uint32_t Count();
 
 	std::string PrintVerticeTree(uint32_t count = 0);
-
+	friend std::string TreeToPlain(Vertice<int>& tree, uint32_t& count);
 };
 
 template <typename T> void Vertice<T>::Add(std::string_view path, const T& data)

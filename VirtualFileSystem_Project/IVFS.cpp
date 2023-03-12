@@ -847,3 +847,27 @@ uint64_t GetDiskSize(std::string filename)
 	std::ifstream in(filename, std::ifstream::ate | std::ifstream::binary);
 	return in.tellg();
 }
+
+std::string TreeToPlain(Vertice<int>& tree, uint32_t& count)
+{
+	// !todo: think of better implementation - tree logic should be hidden
+	std::ostringstream info;
+	if (!tree._children.empty())
+	{
+		for (auto iter = tree._children.begin(); iter != tree._children.end(); ++iter)
+		{
+			info << count << " " << (*iter).first << "|";
+			if ((*iter).second.first)
+				info << *((*iter).second.first) << "\n";
+			else
+				info << "dir" << "\n";
+		}
+		for (auto iter = tree._children.begin(); iter != tree._children.end(); ++iter)
+			if ((*iter).second.second)
+			{
+				++count;
+				info << TreeToPlain(*(*iter).second.second, count);
+			}
+	}
+	return info.str();
+}

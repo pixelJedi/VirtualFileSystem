@@ -13,18 +13,20 @@ int main()
 	// Testing VFS
 
 	Vertice<int>* v = new Vertice<int>();
-	v->Add("1alla\\2gppp\\3mayflower\\4kerning", 4);
-	v->Add("1alla\\6kanister", 6);
-	try{ v->Add("1alla\\6kanister\\error", 13);	}
+	v->Add("0alla\\1gppp\\2mayflower\\3kerning", 4);
+	v->Add("0alla\\1kanister", 6);
+	try{ v->Add("0alla\\1kanister\\error", 13);	}
 	catch (std::invalid_argument& e)
 	{
 		cout << e.what() << endl;
 	}
-	v->Add("1alla\\2gppp\\3mayflower\\5bullor", 5);
-	v->Add("7koven\\8sagarin\\9atternate", 9);
-	v->Add("7koven\\11milka\\10heliotrope", 10);
-	v->Add("m0ooon", 12);
-	cout << v->PrintVerticeTree();
+	v->Add("0alla\\1gppp\\2mayflower\\3bullor", 5);
+	v->Add("0koven\\4sagarin\\6atternate", 9);
+	v->Add("0koven\\4milka\\5heliotrope", 10);
+	v->Add("0m0ooon", 12);
+	cout << v->PrintVerticeTree() << endl;
+	uint32_t depth = 0;
+	cout << TreeToPlain(*v, depth);
 	/*for (auto iter = v->begin(); iter != v->end(); ++iter)
 	{
 		cout << (*iter).first << endl;

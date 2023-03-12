@@ -261,3 +261,5 @@ char* StrToChar(const std::string data);
 uint32_t CharToInt32(const char* bytes);
 
 uint64_t GetDiskSize(std::string filename);	// Check real size of an existing file
+
+std::string TreeToPlain(Vertice<int>& tree, uint32_t& count);
