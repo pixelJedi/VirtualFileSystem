@@ -12,7 +12,7 @@ int main()
 {	
 	// Testing VFS
 
-	Vertice<int>* v = new Vertice<int>();
+	/*Vertice<int>* v = new Vertice<int>();
 	v->Add("0alla\\1gppp\\2mayflower\\3kerning", 4);
 	v->Add("0alla\\1kanister", 6);
 	try{ v->Add("0alla\\1kanister\\error", 13);	}
@@ -24,17 +24,12 @@ int main()
 	v->Add("0koven\\4sagarin\\6atternate", 9);
 	v->Add("0koven\\4milka\\5heliotrope", 10);
 	v->Add("0m0ooon", 12);
-	cout << v->PrintVerticeTree() << endl;
-	uint32_t depth = 0;
-	cout << TreeToPlain(*v, depth);
-	/*for (auto iter = v->begin(); iter != v->end(); ++iter)
-	{
-		cout << (*iter).first << endl;
-		cout << (*iter).second << endl;
-	}*/
+	cout << v->PrintVerticeTree() << endl;*/
 
-
-	/*string disk = "test.tfs";
+	string str = "sdfs";
+	str.resize(50);
+	
+	string disk = "test.tfs";
 	size_t size = 1024 * 1024;	// 1 Mb
 	cout << "Testing file: " << disk << ", size: " << size << endl;
 
@@ -56,14 +51,17 @@ it amet consequat lorem hendrerit porttitor. Suspendisse rho\
 ncus lacus nec erat congue convallis vel at sapien. Mauris i\
 d turpis efficitur, ultricies lorem a, suscipit augue."};
 	char test2[] { "Haruki Murakame" };
-
 	char* text = test1;
-					
+
 	try
 	{
+		std::cout << "---Mount-----------------------------------------\n";
 		vfs->MountOrCreate(disk);
+		std::cout << "---Create----------------------------------------\n";
 		File* f = vfs->Create(file);
-		cout << vfs->Write(f, text, strlen(text)) << " B wrote into file: " << f->GetName();
+		std::cout << "---Write-----------------------------------------\n";
+		cout << vfs->Write(f, text, strlen(text)) << " bytes wrote into file: " << f->GetName();
+		std::cout << "---Unmount---------------------------------------\n";
 		vfs->Unmount(disk);
 	}
 	catch (runtime_error& e)
@@ -71,7 +69,7 @@ d turpis efficitur, ultricies lorem a, suscipit augue."};
 		cout << e.what() << endl;
 	}
 	delete[] file;
-	delete vfs;*/
+	delete vfs;/**/
 
 	// Measuring time:
 	//clock_t tStart = clock();

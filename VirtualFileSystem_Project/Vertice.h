@@ -4,6 +4,7 @@
 #include <sstream>
 #include <memory>
 #include "IVFS.h"
+
 template <typename T>
 class Vertice
 {
@@ -20,7 +21,7 @@ public:
 	uint32_t Count();
 
 	std::string PrintVerticeTree(uint32_t count = 0);
-	friend std::string TreeToPlain(Vertice<int>& tree, uint32_t& count);
+	friend void TreeToPlain(std::vector<char*>& info, Vertice<T>& tree, uint32_t& count);
 };
 
 template <typename T> void Vertice<T>::Add(std::string_view path, const T& data)
@@ -61,7 +62,7 @@ template <typename T> T Vertice<T>::GetData(std::string_view path)
 {
 	size_t pos = path.find_first_of(DELIMITER);
 	std::string head = std::string{ path.substr(0, pos) };
-	if (!_children.count(head)) throw std::logic_error("Directory does not exist: " + head);
+	if (!_children.count(head)) throw std::logic_error(head + " does not exist");
 	if (!_children[head].second) throw std::logic_error(head + " is not a directory");
 	if (pos < path.length())	// == not a leaf
 		return _children[head].second->GetData(path.substr(pos + 1, path.length() - (pos + 1)));

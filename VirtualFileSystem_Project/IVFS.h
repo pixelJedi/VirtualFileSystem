@@ -25,11 +25,15 @@
 struct Node
 {
 protected:
+
 	std::string _fathername;
 	std::string _name;
 	uint32_t _nodeAddr;
+
 public:
-	std::string GetName() const { return _name; };
+
+	std::string GetName() { return _name; };
+	std::string GetFather() { return _fathername; };
 	uint32_t GetNode() const { return _nodeAddr; };
 
 	virtual char* NodeToChar(uint32_t nodeCode) = 0;
@@ -40,7 +44,7 @@ public:
 	friend std::ostream& operator<<(std::ostream& s, const Node& node);
 };
 
-struct Dir : Node
+struct Dir : public Node
 {
 	char* NodeToChar(uint32_t nodeCode);
 
@@ -55,7 +59,7 @@ std::ostream& operator<<(std::ostream& s, const Node& node);
 /// The complex pointer used for locating file datablocks on VDisk.
 /// On VDisk File is represented by node in node area and by data blocks in data area.
 /// </summary>
-struct File : Node
+struct File : public Node
 {
 private:
 	inline static short MAX_READERS = 15;
@@ -70,8 +74,7 @@ private:
 
 	char BuildFileMeta();
 public:
-	
-	std::string GetFather() { return _fathername; };
+
 	uint32_t GetMainTB() const { return _mainTB; };
 	uint32_t GetLastTB() const { return _lastTB; };
 	void SetLastTB(uint32_t addr) { _lastTB = addr; };
@@ -262,4 +265,4 @@ uint32_t CharToInt32(const char* bytes);
 
 uint64_t GetDiskSize(std::string filename);	// Check real size of an existing file
 
-std::string TreeToPlain(Vertice<int>& tree, uint32_t& count);
+void TreeToPlain(std::vector<char*>& info, Vertice<Node*>& tree, uint32_t& count);

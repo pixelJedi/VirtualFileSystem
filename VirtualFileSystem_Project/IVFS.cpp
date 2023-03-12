@@ -11,6 +11,7 @@
 Node::Node(uint32_t nodeAddr, std::string name, std::string fathername)
 {
 	_name = name;
+	_name.resize(NODENAME);
 	_nodeAddr = nodeAddr;
 	_fathername = fathername;
 }
@@ -120,7 +121,7 @@ char* File::NodeToChar(uint32_t nodeCode)
 		for (; ibyte < ADDR; ++ibyte)
 			newNode[ibyte] = IntToChar(nodeCode)[ibyte];
 		// Metadata
-		newNode[ibyte++] = BuildFileMeta();
+		newNode[ibyte] = BuildFileMeta(); ++ibyte;
 		// Name
 		for (; ibyte < NODENAME; ++ibyte)
 			newNode[ibyte] = _name[ibyte - ADDR - 1];
@@ -245,7 +246,21 @@ Vertice<Node*>* VDisk::LoadHierarchy(uint32_t start_index)
 }
 void VDisk::WriteHierarchy()
 {
-	// TBD: Node tree to linear node sector
+	uint32_t nodecode = 0;
+	std::ostringstream info;
+
+	std::vector<char*> nodes;
+	TreeToPlain(nodes, *root, nodecode);
+
+	std::cout << "Max nodecode: " << nodecode << std::endl;
+	uint32_t pos = addrMap[Sect::s_nodes];
+	for (int i = 0; i!= nodes.size(); i++)
+	{
+		disk.SetBytes(pos, nodes[i], NODEDATA);
+		pos += NODEDATA;
+		delete nodes[i];
+	}
+
 }
 /// <summary>
 /// Sets the file that hasn't been used yet
@@ -281,6 +296,7 @@ bool VDisk::UpdateDisk()
 		disk.SetBytes(addrMap[Sect::dd_fBlks], IntToChar(freeBlocks), ADDR);
 		disk.SetBytes(addrMap[Sect::dd_maxNode], IntToChar(maxNode), ADDR);
 		disk.SetBytes(addrMap[Sect::dd_nextFreeBlk], IntToChar(nextFreeBlock), ADDR);
+		WriteHierarchy();
 		// Debug: the fstream is reopened in order to update displayed values in hex editor
 		disk.Close();
 		disk.Open(name);
@@ -619,7 +635,6 @@ bool VFS::IsValidSize(size_t size)
 
 bool VFS::MountOrCreate(std::string& diskName)
 {
-	std::cout << "-------------------------------------------\n";
 	bool mountSuccessful = false;
 	try
 	{
@@ -670,7 +685,6 @@ bool VFS::MountOrCreate(std::string& diskName)
 	catch (...)
 	{
 	}
-	std::cout << "-------------------------------------------\n";
 	return mountSuccessful;
 }
 bool VFS::Unmount(const std::string& diskName)
@@ -709,7 +723,7 @@ VDisk* VFS::GetMostFreeDisk()
 }
 std::vector<VDisk*>::iterator VFS::GetDisk(std::string name)
 {
-	for (auto iter = disks.begin(); iter != disks.end(); )
+	for (auto iter = disks.begin(); iter != disks.end(); ++iter)
 	{
 		if ((*iter)->GetName() == name) return iter;
 		
@@ -723,12 +737,18 @@ std::vector<VDisk*>::iterator VFS::GetDisk(std::string name)
 /// <returns>nullptr if the file is already open or does not exist.</returns>
 File* VFS::Open(const char* name)
 {
+	std::cout << "Trying to open: " << name << " ->";
 	File* file = nullptr;
 	for (const auto& disk : disks)
 	{
 		file = disk->SeekFile(name);
-		if (file && !(file->IsWriteMode())) return file;
+		if (file && !(file->IsWriteMode()))
+		{
+			std::cout << "successful" << name << std::endl;
+			return file;
+		}
 	}
+	std::cout << "failed" << std::endl;
 	return file;
 }
 /// <summary>
@@ -737,25 +757,35 @@ File* VFS::Open(const char* name)
 /// <returns>nullptr if the file is already open.</returns>
 File* VFS::Create(const char* name)
 {
+	std::cout << "Trying to open " << name << " (write mode) -> ";
 	File* file = nullptr;
-	VDisk* mostFreeDisk = disks[0];
 
+	if (disks.empty()) throw std::out_of_range("No disks mounted");
+
+	VDisk* mostFreeDisk = disks[0];
 	for (const auto& disk : disks)
 	{
 		file = disk->SeekFile(name);
 		if (file && !(file->IsBusy()))
 		{
+			std::cout << "file found" << std::endl;
 			file->FlipWriteMode();
 			return file;
 		}
 	}
+	std::cout << "file not found, creating ..." << std::endl;
 	file = GetMostFreeDisk()->CreateFile(name);
 
-	// debug code
-	std::cout << "-----------------------------------" << std::endl;
-	mostFreeDisk->PrintTree();
-	std::cout << "-----------------------------------" << std::endl;
-	// <- debug ends here
+	if (file)
+	{
+		// debug code
+		std::cout << "dbg-----------------------------------" << std::endl;
+		mostFreeDisk->PrintTree();
+		std::cout << "dbg-----------------------------------" << std::endl;
+		// <- debug ends here
+	}
+	std::cout << "Created file: " << name << std::endl;
+	return file;
 }
 size_t VFS::Read(File* f, char* buff, size_t len)
 {
@@ -764,12 +794,14 @@ size_t VFS::Read(File* f, char* buff, size_t len)
 }
 size_t VFS::Write(File* f, char* buff, size_t len)
 {
+	std::cout << "Writing in file: " << f->GetName() << std::endl;
 	VDisk* vd = (*GetDisk(f->GetFather()));
 	if (!vd) throw std::runtime_error("No disk found for the file");
 	return vd->WriteInFile(f, buff, len);
 }
 void VFS::Close(File* f)
 {
+	std::cout << "Clsoing file: " << f->GetName() << std::endl;
 	if (f->IsBusy())
 	{
 		if (f->IsWriteMode())
@@ -783,6 +815,7 @@ void VFS::Close(File* f)
 			std::cout << "File \"" << f->GetName() << "\": "<< f->GetReaders() <<" readers remain\n";
 		}
 	}
+	std::cout << "File closed: " << f->GetName() << std::endl;
 }
 
 VFS::VFS()
@@ -848,26 +881,18 @@ uint64_t GetDiskSize(std::string filename)
 	return in.tellg();
 }
 
-std::string TreeToPlain(Vertice<int>& tree, uint32_t& count)
+void TreeToPlain(std::vector<char*>& info, Vertice<Node*>& tree, uint32_t& count)
 {
 	// !todo: think of better implementation - tree logic should be hidden
-	std::ostringstream info;
 	if (!tree._children.empty())
 	{
 		for (auto iter = tree._children.begin(); iter != tree._children.end(); ++iter)
-		{
-			info << count << " " << (*iter).first << "|";
-			if ((*iter).second.first)
-				info << *((*iter).second.first) << "\n";
-			else
-				info << "dir" << "\n";
-		}
+			info.push_back(&(*(*((*iter).second.first))->NodeToChar(count)));
 		for (auto iter = tree._children.begin(); iter != tree._children.end(); ++iter)
 			if ((*iter).second.second)
 			{
 				++count;
-				info << TreeToPlain(*(*iter).second.second, count);
+				TreeToPlain(info, *(*iter).second.second, count);
 			}
 	}
-	return info.str();
 }
