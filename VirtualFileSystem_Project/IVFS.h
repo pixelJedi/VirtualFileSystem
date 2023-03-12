@@ -102,7 +102,7 @@ public:
 	char* NodeToChar(uint32_t nodeCode);
 
 	File() = delete;
-	File(uint32_t nodeAddr, uint32_t blockAddr, std::string name, std::string fathername, bool writemode = false, short readmode_count = 0);
+	File(uint32_t nodeAddr, uint32_t blockAddr, std::string name, std::string fathername, bool addCluster = true);
 	~File() {};
 };
 
@@ -149,7 +149,8 @@ private:
 
 		fd_nextTB,		// Address of the next title block, if such exists; address of the current block otherwise
 		fd_realSize,	// Real size of the file (not takes into account reserved space)
-		fd_firstDB		// Address of the first data block
+		fd_firstDB,		// Address of the first data block
+		fd_s_firstDB	// Address of the first data block in secondary TB
 	};
 	// Offsets for all key data sections in bytes
 	static std::map<Sect, uint32_t> addrMap;
@@ -192,6 +193,7 @@ private:
 	bool ExpandIfLT(File* f, size_t len);
 	uint32_t AllocateNew(File* f, uint32_t nBlocks);
 	bool NoSlotsInTB(File* f);
+	void LoadFile(File* f);
 
 	uint64_t GetAbsoluteAddrInBlock(uint32_t blockAddr, uint32_t offset) const;
 
@@ -207,6 +209,7 @@ public:
 
 	std::string PrintSpaceLeft() const;
 	void PrintTree();
+	uint32_t calcLastTB(uint32_t first);
 
 	VDisk() = delete;
 	VDisk(const std::string fileName);						// Open existing VDisk
@@ -262,6 +265,7 @@ char* OpenAndReadInfo(std::string filename, uint32_t position, const uint32_t le
 template<typename T> char* IntToChar(const T& data);
 char* StrToChar(const std::string data);
 uint32_t CharToInt32(const char* bytes);
+uint64_t CharToInt64(const char* bytes);
 
 uint64_t GetDiskSize(std::string filename);	// Check real size of an existing file
 
