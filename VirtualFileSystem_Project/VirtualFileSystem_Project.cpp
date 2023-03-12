@@ -2,6 +2,7 @@
 #include <string>
 #include <bitset>
 #include "IVFS.h"
+#include "Vertice.h"
 
 // #include <time.h>	
 
@@ -10,7 +11,28 @@ using namespace std;
 int main()
 {	
 	// Testing VFS
-	string disk = "test.tfs";
+
+	Vertice<int>* v = new Vertice<int>();
+	v->Add("1alla\\2gppp\\3mayflower\\4kerning", 4);
+	v->Add("1alla\\6kanister", 6);
+	try{ v->Add("1alla\\6kanister\\error", 13);	}
+	catch (std::invalid_argument& e)
+	{
+		cout << e.what() << endl;
+	}
+	v->Add("1alla\\2gppp\\3mayflower\\5bullor", 5);
+	v->Add("7koven\\8sagarin\\9atternate", 9);
+	v->Add("7koven\\11milka\\10heliotrope", 10);
+	v->Add("m0ooon", 12);
+	cout << v->PrintVerticeTree();
+	/*for (auto iter = v->begin(); iter != v->end(); ++iter)
+	{
+		cout << (*iter).first << endl;
+		cout << (*iter).second << endl;
+	}*/
+
+
+	/*string disk = "test.tfs";
 	size_t size = 1024 * 1024;	// 1 Mb
 	cout << "Testing file: " << disk << ", size: " << size << endl;
 
@@ -47,7 +69,7 @@ d turpis efficitur, ultricies lorem a, suscipit augue."};
 		cout << e.what() << endl;
 	}
 	delete[] file;
-	delete vfs;/**/
+	delete vfs;*/
 
 	// Measuring time:
 	//clock_t tStart = clock();

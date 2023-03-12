@@ -20,17 +20,24 @@ public:
 	uint32_t Count();
 
 	std::string PrintVerticeTree(uint32_t count = 0);
+
 };
 
 template <typename T> void Vertice<T>::Add(std::string_view path, const T& data)
 {
 	size_t pos = path.find_first_of(DELIMITER);
-	std::string head = std::string{ path.substr(0, pos) };
-	if (!_children.count(head)) _children[head] = std::pair<std::unique_ptr<T>, Vertice*>(std::make_unique<T>(data), nullptr);
+	std::string head = std::string{ path.substr(0, pos) };	// Parse current node name
+	if (!_children.count(head))
+		_children[head] = std::pair<std::unique_ptr<T>, Vertice*>(nullptr, nullptr);
 	if (pos < path.length())	// == not a leaf
 	{
-		_children[head].second = new Vertice();
+		if (_children[head].first) throw std::invalid_argument(" Cannot attach to a leaf: " + head);
+		if (!_children[head].second) _children[head].second = new Vertice();
 		_children[head].second->Add(path.substr(pos + 1, path.length() - (pos + 1)), data);
+	}
+	else
+	{
+		_children[head].first = std::make_unique<T>(data);
 	}
 }
 
@@ -78,8 +85,6 @@ template <typename T> void Vertice<T>::BindNewTreeToChild(const std::string& nam
 	_children[name].second = nodePtr;
 }
 
-#include <iostream>
-
 template <typename T> std::string Vertice<T>::PrintVerticeTree(uint32_t count)
 {
 	std::ostringstream info;
@@ -88,7 +93,10 @@ template <typename T> std::string Vertice<T>::PrintVerticeTree(uint32_t count)
 		for (auto iter = _children.begin(); iter != _children.end(); ++iter)
 		{
 			for (uint32_t i = 0; i != count; ++i) info << "  ";
-			info << (*iter).first << " " << *((*iter).second.first) << "\n";
+			info << (*iter).first << " ";
+			if ((*iter).second.first) info << *((*iter).second.first);
+			else info << "-";
+			info << "\n";
 			if ((*iter).second.second) info << (*iter).second.second->PrintVerticeTree(count + 1);
 		}
 	}
