@@ -56,11 +56,18 @@ d turpis efficitur, ultricies lorem a, suscipit augue."};
 	try
 	{
 		std::cout << "---Mount-----------------------------------------\n";
-		vfs->MountOrCreate(disk);
+		try	{ 
+			vfs->MountOrCreate(disk);	
+		} catch (std::invalid_argument& e)
+		{
+			// todo: rewrite without exeptions, may overflow the stack
+			std::cout << e.what();
+			vfs->MountOrCreate(disk);
+		}
 		std::cout << "---Create----------------------------------------\n";
 		File* f = vfs->Create(file);
 		std::cout << "---Write-----------------------------------------\n";
-		cout << vfs->Write(f, text, strlen(text)) << " bytes wrote into file: " << f->GetName();
+		cout << vfs->Write(f, text, strlen(text)) << " bytes wrote into file: " << f->GetName() << endl;
 		std::cout << "---Unmount---------------------------------------\n";
 		vfs->Unmount(disk);
 	}

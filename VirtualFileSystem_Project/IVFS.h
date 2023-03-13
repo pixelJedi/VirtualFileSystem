@@ -173,10 +173,10 @@ private:
 	uint32_t EstimateBlockCapacity(size_t size) const;
 	uint64_t EstimateMaxSize(uint64_t size) const;		// User's size is truncated so that all blocks are of BLOCK size
 	
+	uint32_t ReserveCluster();
 	uint32_t TakeFreeNode();
-	uint32_t TakeFreeBlocks();
 	void UpdateBlockCounters(uint32_t count = 0);
-	uint32_t TakeFreeBlock(File* f);
+	void TakeFreeBlock(File* f);
 	
 	bool InitDisk();									// Format new VDisk
 	bool UpdateDisk();									// Write data into the associated file
@@ -269,4 +269,4 @@ uint64_t CharToInt64(const char* bytes);
 
 uint64_t GetDiskSize(std::string filename);	// Check real size of an existing file
 
-void TreeToPlain(std::vector<char*>& info, Vertice<Node*>& tree, uint32_t& count);
+void TreeToPlain(std::vector<char*>& info, Vertice<Node*>& tree, uint32_t& nodecode);

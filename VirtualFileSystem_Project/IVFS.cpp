@@ -116,18 +116,18 @@ char* File::NodeToChar(uint32_t nodeCode)
 	try
 	{
 		char* newNode = new char[NODEDATA];
-		short ibyte = 0;
+		short i, ibyte = 0;
 		// Node code
-		for (; ibyte < ADDR; ++ibyte)
-			newNode[ibyte] = IntToChar(nodeCode)[ibyte];
+		for (i = 0; i < ADDR; ++i, ++ibyte)
+			newNode[ibyte] = IntToChar(nodeCode)[i];
 		// Metadata
 		newNode[ibyte] = BuildFileMeta(); ++ibyte;
 		// Name
-		for (; ibyte < NODENAME; ++ibyte)
-			newNode[ibyte] = _name[ibyte - ADDR - 1];
+		for (i = 0; i < NODENAME; ++i, ++ibyte)
+			newNode[ibyte] = _name[i];
 		// File address
-		for (; ibyte < ADDR; ++ibyte)
-			newNode[ibyte] = IntToChar(_nodeAddr)[ibyte];
+		for (i = 0; i < ADDR; ++i, ++ibyte)
+			newNode[ibyte] = IntToChar(_nodeAddr)[i];
 		return newNode;
 	}
 	catch (...)
@@ -145,7 +145,7 @@ File::File(uint32_t nodeAddr, uint32_t blockAddr, std::string name, std::string 
 	blockAddr++;
 
 	if (addCluster)
-		for(int i = 0;i<CLUSTER;++i)
+		for(int i = 0;i<CLUSTER; ++i)
 			blocks.push_back(blockAddr+i);
 }
 
@@ -266,9 +266,8 @@ void VDisk::WriteHierarchy()
 	uint32_t pos = addrMap[Sect::s_nodes];
 	for (int i = 0; i!= nodes.size(); i++)
 	{
-		disk.SetBytes(pos, nodes[i], NODEDATA);
-		pos += NODEDATA;
-		delete nodes[i];
+		disk.SetBytes(pos + i * NODEDATA, nodes[i], NODEDATA);
+		//delete nodes[i];
 	}
 }
 /// <summary>
@@ -354,6 +353,7 @@ std::tuple<uint32_t, uint32_t> VDisk::GetPosLen(Sect info, uint32_t i)
 		break;
 	case Sect::fd_nextTB:
 	case Sect::fd_firstDB:
+	case Sect::fd_s_firstDB:
 		pos = addrMap[Sect::s_blocks] + i * BLOCK + addrMap[info];
 		len = ADDR;
 		break;
@@ -389,38 +389,36 @@ uint32_t VDisk::TakeFreeNode()
 	--freeNodes;
 	return curFree;
 }
-/// <summary>
-/// Checks for blocks availability and updates FreeBlocks counter
-/// </summary>
-/// <returns>Address of the first allocated block</returns>
-uint32_t VDisk::TakeFreeBlocks()
-{
-	if (!freeBlocks) throw std::logic_error("Failed to get a free block");
-// todo: implement proper tracking of busy block, e.g. through bitmap
-	uint32_t curFree = nextFreeBlock;	
-// todo: allow to 1) allocate less than a cluster, and 2) non-neighbour blocks
-	nextFreeBlock = (nextFreeBlock + CLUSTER) > maxBlock ? throw std::logic_error("Failed to get a full cluster") : nextFreeBlock + CLUSTER;
-	freeBlocks -= CLUSTER;
-	return curFree;
-}
 void VDisk::UpdateBlockCounters(uint32_t count)
 {
 	nextFreeBlock+= count;
 	freeBlocks-=count;
 }
-uint32_t VDisk::TakeFreeBlock(File* f)
+/// <summary>
+/// Checks for blocks availability and updates FreeBlocks counter
+/// </summary>
+/// <returns>Address of the first allocated block</returns>
+uint32_t VDisk::ReserveCluster()
 {
-	uint32_t curFree = 0;
+	if (!freeBlocks) throw std::logic_error("Failed to get a free block");
+	uint32_t curFree = nextFreeBlock;	
+// todo: allow to 1) allocate less than a cluster, and 2) non-neighbour blocks
+// 3) implement proper tracking of busy block, e.g. through bitmap
+	nextFreeBlock = (nextFreeBlock + CLUSTER) > maxBlock ? throw std::logic_error("Failed to get a full cluster") : nextFreeBlock + CLUSTER;
+	freeBlocks -= CLUSTER;
+	return curFree;
+}
+void VDisk::TakeFreeBlock(File* f)
+{
 	if (!freeBlocks) throw std::logic_error("Failed to get a free block");
 	f->AddDataBlock(nextFreeBlock);
-	UpdateBlockCounters();
+	UpdateBlockCounters(1);
 	if (NoSlotsInTB(f))
 	{
 		if (!freeBlocks) throw std::logic_error("Failed to get a new title block");
 		InitTB(f, nextFreeBlock + 1);
-		UpdateBlockCounters();
+		UpdateBlockCounters(1);
 	}
-	return curFree;
 }
 
 bool VDisk::IsEmptyNode(short index)
@@ -554,24 +552,27 @@ bool VDisk::NoSlotsInTB(File* f)
 
 void VDisk::LoadFile(File* f)
 {
-	uint32_t main = f->GetMainTB();
-	uint32_t last = main;
-	char* addr;
+	uint32_t main, last, next, addr;
+	last = main = f->GetMainTB();
+	char* rawaddr;
 	while (true)	// == through different Title Blocks
 	{
-		uint32_t iblock = CharToInt32(ReadInfo(Sect::fd_s_firstDB, last));
+		size_t pos = std::get<0>(GetPosLen(Sect::fd_s_firstDB, last));
 		for (short i = 0; i != BLOCK/ADDR-1; ++i)	// == within same Title Block
 		{
-			if (main != last || i >= 2)
-			{
-				addr = new char[ADDR];
-				disk.GetBytes(iblock + i*ADDR, addr, ADDR);
-				f->AddDataBlock(CharToInt32(addr));
-				delete addr;
-			}
+			if (main == last && i < 2) continue;	// Skip difference between Main and Secondary TBs
+
+			rawaddr = new char[ADDR];
+			disk.GetBytes(pos + i*ADDR, rawaddr, ADDR);
+			addr = CharToInt32(rawaddr);
+			delete[] rawaddr;
+
+			if (addr == main) break;
+
+			f->AddDataBlock(addr);
 		}
 
-		uint32_t next = CharToInt32(ReadInfo(Sect::fd_nextTB, main));
+		next = CharToInt32(ReadInfo(Sect::fd_nextTB, main));
 		if (next == last) break;
 		last = next;
 	}
@@ -588,8 +589,7 @@ File* VDisk::CreateFile(const char* name)
 	try
 	{
 		uint32_t freeNode = TakeFreeNode();
-		uint32_t freeBlock = TakeFreeBlocks();
-		File* f = new File(freeNode, freeBlock, name, this->name);
+		File* f = new File(freeNode, ReserveCluster(), name, this->name);
 		Node* t = f;
 		root->Add(name, t);
 		InitTB(f, f->GetLastTB());
@@ -617,6 +617,8 @@ size_t VDisk::WriteInFile(File* f, char* buff, size_t len)
 			disk.SetBytes(pos, &buff[wrote], ilen);
 			f->IncreaseSize(ilen);
 			wrote += ilen;
+			pos = std::get<0>(GetPosLen(Sect::fd_realSize, f->GetMainTB()));
+			disk.SetBytes(pos, IntToChar(f->GetSize()), 2 * ADDR);
 		}
 		catch (...)
 		{
@@ -633,14 +635,13 @@ VDisk::VDisk(const std::string fileName):
 	maxNode(CharToInt32(OpenAndReadInfo(fileName,addrMap[Sect::dd_maxNode],ADDR))),
 	maxBlock(EstimateBlockCapacity(sizeInBytes))
 {
-	std::cout << "Disk \"" << name << "\" opened\n";
-	
+	addrMap[Sect::s_blocks] = DISKDATA + maxNode * NODEDATA;
 	disk.Open(fileName);
 	root = LoadHierarchy();
 	freeNodes = CharToInt32(ReadInfo(Sect::dd_fNodes));
 	freeBlocks = CharToInt32(ReadInfo(Sect::dd_fBlks));
 	nextFreeBlock = CharToInt32(ReadInfo(Sect::dd_nextFreeBlk));
-	addrMap[Sect::s_blocks] = DISKDATA + maxNode * NODEDATA;
+	std::cout << "Disk \"" << name << "\" opened\n";
 }
 /// Creating new disk 
 VDisk::VDisk(const std::string fileName, const uint64_t size) :
@@ -649,9 +650,9 @@ VDisk::VDisk(const std::string fileName, const uint64_t size) :
 	maxBlock(EstimateBlockCapacity(size)),
 	sizeInBytes(EstimateMaxSize(size))
 {
+	addrMap[Sect::s_blocks] = DISKDATA + maxNode * NODEDATA;
 	disk.Open(fileName, true);
 	root = new Vertice<Node*>();
-	addrMap[Sect::s_blocks] = DISKDATA + maxNode * NODEDATA;
 	if (!InitDisk()) throw std::runtime_error("Initialization failed");
 	else std::cout << "Disk \"" << name << "\" initialized\n";
 }
@@ -673,55 +674,51 @@ bool VFS::IsValidSize(size_t size)
 bool VFS::MountOrCreate(std::string& diskName)
 {
 	bool mountSuccessful = false;
-	try
+	
+	if (!std::filesystem::exists(diskName))
 	{
-		if (!std::filesystem::exists(diskName))
+		char answer;
+		std::cout << "\"" << diskName << "\" doesn't exist. Create? y/n\n> ";
+		std::cin >> answer;
+		std::cin.ignore(UINT32_MAX, '\n');
+		std::cin.clear();
+		switch (answer)
 		{
-			char answer;
-			std::cout << "\"" << diskName << "\" doesn't exist. Create? y/n\n> ";
-			std::cin >> answer;
+		case 'Y':
+		case 'y':
+		{
+			size_t diskSize = 0;
+			std::cout << "Specify size of disk \"" + diskName + "\", bytes (minimum " + std::to_string(DISKDATA + NODEDATA + CLUSTER*BLOCK) + " B)\n> ";
+			std::cin >> diskSize;
 			std::cin.ignore(UINT32_MAX, '\n');
 			std::cin.clear();
-			switch (answer)
+			if (IsValidSize(diskSize))
 			{
-			case 'Y':
-			case 'y':
-			{
-				size_t diskSize = 0;
-				std::cout << "Specify size of disk \"" + diskName + "\", bytes (minimum " + std::to_string(DISKDATA + NODEDATA + CLUSTER*BLOCK) + " B)\n> ";
-				std::cin >> diskSize;
-				std::cin.ignore(UINT32_MAX, '\n');
-				std::cin.clear();
-				if (IsValidSize(diskSize))
-				{
-					VDisk* vd = new VDisk(diskName, diskSize);
-					VFS::disks.push_back(vd);
-					std::cout << "Created and mounted disk \"" + diskName + "\" with size " + std::to_string(vd->GetSizeInBytes()) + " B\n";
-					mountSuccessful = true;
-					break;
-				}
-				std::cout << "Size is invalid. ";
-			}
-			[[fallthrough]];
-			case 'N':
-			case 'n':
-				std::cout << "Disk \"" << diskName << "\" was not mounted\n";
-				break;
-			default:
-				std::cout << "Bad input. Try again\n";
+				VDisk* vd = new VDisk(diskName, diskSize);
+				VFS::disks.push_back(vd);
+				std::cout << "Created and mounted disk \"" + diskName + "\" with size " + std::to_string(vd->GetSizeInBytes()) + " B\n";
+				mountSuccessful = true;
 				break;
 			}
+			std::cout << "Size is invalid. ";
 		}
-		else
-		{
-			std::cout << "Mounted disk \"" << diskName << "\" to the VFS\n";
-			VFS::disks.push_back(new VDisk(diskName));
-			mountSuccessful = true;
+		[[fallthrough]];
+		case 'N':
+		case 'n':
+			std::cout << "Disk \"" << diskName << "\" was not mounted\n";
+			break;
+		default:
+			throw std::invalid_argument("Bad input. Try again");
+			break;
 		}
 	}
-	catch (...)
+	else
 	{
+		std::cout << "Mounted disk \"" << diskName << "\" to the VFS\n";
+		VFS::disks.push_back(new VDisk(diskName));
+		mountSuccessful = true;
 	}
+
 	return mountSuccessful;
 }
 bool VFS::Unmount(const std::string& diskName)
@@ -904,7 +901,7 @@ uint32_t CharToInt32(const char* bytes)
 uint64_t CharToInt64(const char* bytes)
 {
 	// todo: make template
-	const int mask = 0xFFFF;
+	const int mask = 0xFF;
 	uint64_t data = 0;
 
 	for (int i = 0; i != sizeof(uint64_t); ++i)
@@ -933,18 +930,18 @@ uint64_t GetDiskSize(std::string filename)
 	return in.tellg();
 }
 
-void TreeToPlain(std::vector<char*>& info, Vertice<Node*>& tree, uint32_t& count)
+void TreeToPlain(std::vector<char*>& info, Vertice<Node*>& tree, uint32_t& nodecode)
 {
 	// !todo: think of better implementation - tree logic should be hidden
 	if (!tree._children.empty())
 	{
 		for (auto iter = tree._children.begin(); iter != tree._children.end(); ++iter)
-			info.push_back(&(*(*((*iter).second.first))->NodeToChar(count)));
+			info.push_back(&(*(*((*iter).second.first))->NodeToChar(nodecode)));
 		for (auto iter = tree._children.begin(); iter != tree._children.end(); ++iter)
 			if ((*iter).second.second)
 			{
-				++count;
-				TreeToPlain(info, *(*iter).second.second, count);
+				++nodecode;
+				TreeToPlain(info, *(*iter).second.second, nodecode);
 			}
 	}
 }
