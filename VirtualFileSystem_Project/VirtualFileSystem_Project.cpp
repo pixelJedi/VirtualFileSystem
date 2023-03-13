@@ -12,20 +12,6 @@ int main()
 {	
 	// Testing VFS
 
-	/*Vertice<int>* v = new Vertice<int>();
-	v->Add("0alla\\1gppp\\2mayflower\\3kerning", 4);
-	v->Add("0alla\\1kanister", 6);
-	try{ v->Add("0alla\\1kanister\\error", 13);	}
-	catch (std::invalid_argument& e)
-	{
-		cout << e.what() << endl;
-	}
-	v->Add("0alla\\1gppp\\2mayflower\\3bullor", 5);
-	v->Add("0koven\\4sagarin\\6atternate", 9);
-	v->Add("0koven\\4milka\\5heliotrope", 10);
-	v->Add("0m0ooon", 12);
-	cout << v->PrintVerticeTree() << endl;*/
-
 	string str = "sdfs";
 	str.resize(50);
 	
@@ -68,6 +54,17 @@ d turpis efficitur, ultricies lorem a, suscipit augue."};
 		File* f = vfs->Create(file);
 		std::cout << "---Write-----------------------------------------\n";
 		cout << vfs->Write(f, text, strlen(text)) << " bytes wrote into file: " << f->GetName() << endl;
+		std::cout << "---Read-error------------------------------------\n";
+		int pos = 1500;
+		char* buff = new char[pos];
+		cout << vfs->Read(f, buff, pos) << " bytes read from file: " << f->GetName() << endl;
+		std::cout << "---Close-----------------------------------------\n";
+		vfs->Close(f);
+		std::cout << "---Close-----------------------------------------\n";
+		vfs->Open(file);
+		std::cout << "---Read-ok---------------------------------------\n";
+		cout << vfs->Read(f, buff, pos) << " bytes read from file: " << f->GetName() << endl;
+		cout << buff << endl;
 		std::cout << "---Unmount---------------------------------------\n";
 		vfs->Unmount(disk);
 	}

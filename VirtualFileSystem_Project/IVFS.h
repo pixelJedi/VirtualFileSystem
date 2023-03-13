@@ -169,17 +169,18 @@ private:
 	Vertice<Node*>* LoadHierarchy(uint32_t start_index = 0);
 	void WriteHierarchy();
 
+	bool InitDisk();									// Format new VDisk
+	bool UpdateDisk();									// Write data into the associated file
+
 	uint32_t EstimateNodeCapacity(size_t size) const;
 	uint32_t EstimateBlockCapacity(size_t size) const;
 	uint64_t EstimateMaxSize(uint64_t size) const;		// User's size is truncated so that all blocks are of BLOCK size
 	
-	uint32_t ReserveCluster();
 	uint32_t TakeFreeNode();
-	void UpdateBlockCounters(uint32_t count = 0);
+	uint32_t ReserveCluster();
 	void TakeFreeBlock(File* f);
+	void UpdateBlockCounters(uint32_t count = 0);
 	
-	bool InitDisk();									// Format new VDisk
-	bool UpdateDisk();									// Write data into the associated file
 	
 	std::tuple<uint32_t, uint32_t> GetPosLen(Sect info, uint32_t i);
 	char* ReadInfo(Sect info, uint32_t i = 0);			// Get raw data from a specific Section
@@ -206,10 +207,10 @@ public:
 	File* SeekFile(const char* name) const;
 	File* CreateFile(const char* name);						// Reserves space for a new file
 	size_t WriteInFile(File* f, char* buff, size_t len);
+	size_t ReadFromFile(File* f, char* buff, size_t len);
 
 	std::string PrintSpaceLeft() const;
 	void PrintTree();
-	uint32_t calcLastTB(uint32_t first);
 
 	VDisk() = delete;
 	VDisk(const std::string fileName);						// Open existing VDisk
@@ -247,9 +248,9 @@ public:
 	bool MountOrCreate(std::string& diskName);
 	bool Unmount(const std::string& diskName);
 
-	File* Open(const char* name) override;					// TBD
+	File* Open(const char* name) override;
 	File* Create(const char* name) override;
-	size_t Read(File* f, char* buff, size_t len) override;	// TBD
+	size_t Read(File* f, char* buff, size_t len) override;
 	size_t Write(File* f, char* buff, size_t len) override;
 	void Close(File* f) override;
 

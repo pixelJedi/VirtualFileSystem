@@ -628,6 +628,22 @@ size_t VDisk::WriteInFile(File* f, char* buff, size_t len)
 	return wrote;
 }
 
+size_t VDisk::ReadFromFile(File* f, char* buff, size_t len)
+{
+	len = std::min(f->GetSize(), len);
+	size_t read = 0;
+	int i = 0;
+	while (read != len)
+	{
+		uint32_t pos = addrMap[Sect::s_blocks] + f->GetDataBlock(i) * BLOCK;
+		uint32_t ilen = std::min(size_t(BLOCK), len - read);
+		disk.GetBytes(pos, &buff[read], ilen);
+		read += ilen;
+		++i;
+	}
+	return read;
+}
+
 /// Loading existing disk 
 VDisk::VDisk(const std::string fileName):
 	name(fileName),
@@ -771,19 +787,20 @@ std::vector<VDisk*>::iterator VFS::GetDisk(std::string name)
 /// <returns>nullptr if the file is already open or does not exist.</returns>
 File* VFS::Open(const char* name)
 {
-	std::cout << "Trying to open: " << name << " ->";
+	std::cout << "* Trying to open " << name << " (read mode) -> ";
 	File* file = nullptr;
 	for (const auto& disk : disks)
 	{
 		file = disk->SeekFile(name);
 		if (file && !(file->IsWriteMode()))
 		{
+			file->AddReader();
 			std::cout << "successful" << name << std::endl;
 			return file;
 		}
 	}
 	std::cout << "failed" << std::endl;
-	return file;
+	return nullptr;
 }
 /// <summary>
 /// Opens or creates the file in writeonly mode. 
@@ -791,7 +808,7 @@ File* VFS::Open(const char* name)
 /// <returns>nullptr if the file is already open.</returns>
 File* VFS::Create(const char* name)
 {
-	std::cout << "Trying to open " << name << " (write mode) -> ";
+	std::cout << "* Trying to open " << name << " (write mode) -> ";
 	File* file = nullptr;
 
 	if (disks.empty()) throw std::out_of_range("No disks mounted");
@@ -818,26 +835,34 @@ File* VFS::Create(const char* name)
 			mostFreeDisk->PrintTree();
 			std::cout << "dbg-----------------------------------" << std::endl;
 			// <- debug ends here
+			std::cout << "Created file: " << name << std::endl;
+			return file;
 		}
-		std::cout << "Created file: " << name << std::endl;
 	}
-	return file;
+	std::cout << "Failed to create file: " << name << std::endl;
+	return nullptr;
 }
 size_t VFS::Read(File* f, char* buff, size_t len)
 {
-	// TBD
-	return size_t();
+	if (f->IsWriteMode()) {
+		std::cout << "File is open in writemode" << std::endl;
+		return 0;
+	}
+	std::cout << "* Reading file: " << f->GetName() << std::endl;
+	VDisk* vd = (*GetDisk(f->GetFather()));
+	if (!vd) throw std::runtime_error("No disk found for the file");
+	return vd->ReadFromFile(f, buff, len);
 }
 size_t VFS::Write(File* f, char* buff, size_t len)
 {
-	std::cout << "Writing in file: " << f->GetName() << std::endl;
+	std::cout << "* Writing in file: " << f->GetName() << std::endl;
 	VDisk* vd = (*GetDisk(f->GetFather()));
 	if (!vd) throw std::runtime_error("No disk found for the file");
 	return vd->WriteInFile(f, buff, len);
 }
 void VFS::Close(File* f)
 {
-	std::cout << "Clsoing file: " << f->GetName() << std::endl;
+	std::cout << "* Closing file: " << f->GetName() << std::endl;
 	if (f->IsBusy())
 	{
 		if (f->IsWriteMode())
