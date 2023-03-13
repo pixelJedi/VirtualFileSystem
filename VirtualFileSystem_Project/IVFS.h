@@ -3,6 +3,9 @@
 #include <vector>
 #include <fstream>
 #include <map>
+#include <cmath>
+#include <algorithm>
+#include <memory>
 #include "Vertice.h"
 
 /* ---Commmon--------------------------------------------------------------- */
@@ -22,51 +25,85 @@
 struct Node
 {
 protected:
-	std::string _name;			// Unmutable
-	uint32_t _nodeAddr;			// Unmutable
+
+	std::string _fathername;
+	std::string _name;
+	uint32_t _nodeAddr;
+
 public:
-	std::string GetName() const { return _name; };
+
+	std::string GetName() { return _name; };
+	std::string GetFather() { return _fathername; };
 	uint32_t GetNode() const { return _nodeAddr; };
 
+	virtual char* NodeToChar(uint32_t nodeCode) = 0;
+
+	Node(uint32_t nodeAddr, std::string name, std::string fathername);
+	virtual ~Node() {};
+
+	friend std::ostream& operator<<(std::ostream& s, const Node& node);
+};
+
+struct Dir : public Node
+{
 	char* NodeToChar(uint32_t nodeCode);
 
-	Node(uint32_t nodeAddr, std::string name);
+	Dir() = delete;
+	Dir(uint32_t nodeAddr, std::string name, std::string fathername);
+	~Dir() {};
 };
+
+std::ostream& operator<<(std::ostream& s, const Node& node);
+
 /// <summary>
 /// The complex pointer used for locating file datablocks on VDisk.
 /// On VDisk File is represented by node in node area and by data blocks in data area.
 /// </summary>
-struct File : Node
+struct File : public Node
 {
 private:
 	inline static short MAX_READERS = 15;
-	uint64_t _realSize;			// Changed after writing, used for calculating position for write data
+	uint64_t _realSize;				// Changed after writing, used for calculating position for write data
 	bool _writemode;
 	short _readmode_count;
 
+	uint32_t _mainTB;
+	uint32_t _lastTB;
+
+	std::vector<uint32_t> blocks;	// Remember: addresses are ADDR length
+
 	char BuildFileMeta();
 public:
-	std::vector<uint32_t> blocks;				// Remember: addresses are ADDR length
-	
-	uint32_t GetData() const { return *blocks.begin(); };
-	uint64_t GetSize() const { return _realSize; };
-	uint32_t SetSize(uint64_t value) { _realSize = value; };
 
+	uint32_t GetMainTB() const { return _mainTB; };
+	uint32_t GetLastTB() const { return _lastTB; };
+	void SetLastTB(uint32_t addr) { _lastTB = addr; };
+	uint64_t GetSize() const { return _realSize; };
+	void IncreaseSize(uint32_t val) { _realSize += val; };
+	uint32_t CountDataBlocks() const { return blocks.size(); };
+	uint32_t GetCurDataBlock() const;
+	uint32_t GetDataBlock(uint32_t index) const { return blocks[index]; };
+	uint32_t GetLastDataBlock() const { return blocks.back(); };
+	size_t GetRemainingSpace() const;
+	uint32_t GetNextSlot() const; 
+	uint32_t EstimateBlocksNeeded(size_t dataLength) const;
 	bool IsBusy() { return _writemode || _readmode_count; };
 	bool IsWriteMode() { return _writemode; };
 	short GetReaders() { return _readmode_count; };
-	void FlipWriteMode() { _writemode = !_writemode; };
+
+	void FlipWriteMode();
 	void AddReader();
 	void RemoveReader();
+	void AddDataBlock(uint32_t datablock);
 
-	uint64_t WritePtr() const;
+	uint64_t Fseekp() const;
 	size_t ReadNext(char* buffer);		// TBD
-	size_t WriteData(char * buffer);	// TBD
 
 	char* NodeToChar(uint32_t nodeCode);
 
 	File() = delete;
-	File(uint32_t nodeAddr, uint32_t blockAddr, std::string name, bool writemode = false, short readmode_count = 0);
+	File(uint32_t nodeAddr, uint32_t blockAddr, std::string name, std::string fathername, bool addCluster = true);
+	~File() {};
 };
 
 /* ---BinDisk--------------------------------------------------------------- */
@@ -112,13 +149,11 @@ private:
 
 		fd_nextTB,		// Address of the next title block, if such exists; address of the current block otherwise
 		fd_realSize,	// Real size of the file (not takes into account reserved space)
-		fd_firstDB		// Address of the first data block
+		fd_firstDB,		// Address of the first data block
+		fd_s_firstDB	// Address of the first data block in secondary TB
 	};
 	// Offsets for all key data sections in bytes
 	static std::map<Sect, uint32_t> addrMap;
-
-	BinDisk disk;					// Main data in/out stream
-	Vertice<Node*>* root;			// Hierarchy & search
 
 	const std::string name;
 	const uint64_t sizeInBytes;		// Reserved size provided during creation
@@ -128,19 +163,25 @@ private:
 	uint32_t freeBlocks;
 	uint32_t nextFreeBlock;
 
+	BinDisk disk;					// Main data in/out stream
+	Vertice<Node*>* root;			// Hierarchy & search
+
+	Vertice<Node*>* LoadHierarchy(uint32_t start_index = 0);
+	void WriteHierarchy();
+
 	uint32_t EstimateNodeCapacity(size_t size) const;
 	uint32_t EstimateBlockCapacity(size_t size) const;
 	uint64_t EstimateMaxSize(uint64_t size) const;		// User's size is truncated so that all blocks are of BLOCK size
 	
+	uint32_t ReserveCluster();
 	uint32_t TakeFreeNode();
-	uint32_t TakeFreeBlocks();
-
-	Vertice<Node*>* LoadHierarchy(uint32_t start_index = 0);
-	void WriteHierarchy();
+	void UpdateBlockCounters(uint32_t count = 0);
+	void TakeFreeBlock(File* f);
 	
 	bool InitDisk();									// Format new VDisk
 	bool UpdateDisk();									// Write data into the associated file
 	
+	std::tuple<uint32_t, uint32_t> GetPosLen(Sect info, uint32_t i);
 	char* ReadInfo(Sect info, uint32_t i = 0);			// Get raw data from a specific Section
 	
 	bool IsEmptyNode(short index);
@@ -148,9 +189,11 @@ private:
 	uint32_t GetNodeCode(short index);
 	uint32_t GetChildAddr(short index);
 
-	char* BuildNode(uint32_t nodeCode, uint32_t blockAddr, const char* name, bool isDir);
-	char BuildFileMeta(bool isDir, bool inWriteMode, short inReadMode);
-	void InitTitleBlock(File* file);
+	void InitTB(File* file, uint32_t newAddr);
+	bool ExpandIfLT(File* f, size_t len);
+	uint32_t AllocateNew(File* f, uint32_t nBlocks);
+	bool NoSlotsInTB(File* f);
+	void LoadFile(File* f);
 
 	uint64_t GetAbsoluteAddrInBlock(uint32_t blockAddr, uint32_t offset) const;
 
@@ -160,10 +203,13 @@ public:
 	uint32_t GetBlocksLeft() const { return freeBlocks; };
 	uint32_t GetNodesLeft() const { return freeNodes; };
 
-	std::string PrintSpaceLeft() const;
-
 	File* SeekFile(const char* name) const;
-	File* FMalloc(const char* name);						// Reserves space for a new file
+	File* CreateFile(const char* name);						// Reserves space for a new file
+	size_t WriteInFile(File* f, char* buff, size_t len);
+
+	std::string PrintSpaceLeft() const;
+	void PrintTree();
+	uint32_t calcLastTB(uint32_t first);
 
 	VDisk() = delete;
 	VDisk(const std::string fileName);						// Open existing VDisk
@@ -195,15 +241,16 @@ class VFS : IVFS
 private:
 	std::vector <VDisk*> disks;
 	bool IsValidSize(size_t size);
+	VDisk* GetMostFreeDisk();
+	std::vector<VDisk*>::iterator GetDisk(std::string name);
 public:
 	bool MountOrCreate(std::string& diskName);
 	bool Unmount(const std::string& diskName);
-	VDisk* GetMostFreeDisk();
 
 	File* Open(const char* name) override;					// TBD
 	File* Create(const char* name) override;
 	size_t Read(File* f, char* buff, size_t len) override;	// TBD
-	size_t Write(File* f, char* buff, size_t len) override;	// <-- working here
+	size_t Write(File* f, char* buff, size_t len) override;
 	void Close(File* f) override;
 
 	VFS();
@@ -218,7 +265,8 @@ char* OpenAndReadInfo(std::string filename, uint32_t position, const uint32_t le
 template<typename T> char* IntToChar(const T& data);
 char* StrToChar(const std::string data);
 uint32_t CharToInt32(const char* bytes);
+uint64_t CharToInt64(const char* bytes);
 
 uint64_t GetDiskSize(std::string filename);	// Check real size of an existing file
 
-void PrintVerticeTree(Vertice<Node>* v, uint32_t count = 0);
+void TreeToPlain(std::vector<char*>& info, Vertice<Node*>& tree, uint32_t& nodecode);
