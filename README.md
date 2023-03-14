@@ -107,6 +107,12 @@ Members:
 - `uint32_t _nodeAddr`: 	address in the hosting VDisk's Node data section;
 - `virtual char* NodeToChar(uint32_t nodeCode) = 0`: transforms node to binary, taking nodeCode from the outside.
 
+`NodeToChar` is a key part in transforming the multidemensional file hierarchy into a linear list of nodes.
+![Tree to Plain node correlation](/VirtualFileSystem_Description/TreeToPlain.png)
+
+* Node Code is calculated during the conversion, it is not supposed to be stored during runtime.
+* Addresses are needed when the data is loaded. During the runtime, the tree is stored in Vertices.
+
 [^2]: Remove candidate. As soon as Nodes are stored in the Vertice (tree with named relations), storing name here is a data duplication (although it's often handy). What's more, currently it's possible to distinguish Files from Nodes through the Vertice peculiarities, so only the File class is currently needed. However, the inheritance is being kept as Dir may need specific traits in the future. 
 
 ## File
@@ -156,7 +162,7 @@ Is a container node with named children, based on std::map, which is based on [R
 ## FAQ
 > **1. Can I read, write, open or create files using your VFS?**
 
-So-so. I can guarantee you're able to run the test code in the project's main. I'm still meditating on debugging.
+So-so. I'm still meditating on debugging, but basically, yes. I can guarantee you're able to run the test code in the project's main, it will demonstrate IVFS interface's work.
 
 > **2. Why do you show us such a raw code?**
 
