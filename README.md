@@ -23,9 +23,9 @@ Currently, the following constants are used:
 ### Operating
 The VFS class inherits IVFS interface which supports the following actions:
 
-- [ ] `Open`:   open an existing file for reading;
+- [x] `Open`:   open an existing file for reading;
 - [x] `Create`: open a new file for writing;
-- [ ] `Read`:   load bytes from the file to the buffer;
+- [x] `Read`:   load bytes from the file to the buffer;
 - [x] `Write`:  load bytes from the buffer to the file;
 - [x] `Close`:  close file.
 
