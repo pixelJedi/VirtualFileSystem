@@ -93,7 +93,7 @@ public:
 
 	// Setters
 
-	void FlipWriteMode();
+	void FlipWriteMode() { _writemode = !_writemode; };
 	void AddReader();
 	void RemoveReader();
 	void SetLastTB(uint32_t addr) { _lastTB = addr; };
@@ -102,8 +102,8 @@ public:
 	// Other
 
 	uint32_t EstimateBlocksNeeded(size_t dataLength) const;	
-	void AddDataBlock(uint32_t datablock);
 	char* NodeToChar(uint32_t nodeCode);
+	void AddDataBlock(uint32_t datablock) { blocks.push_back(datablock); };
 
 	// Class
 
@@ -187,17 +187,17 @@ private:
 	uint32_t ReserveCluster();							// Reserve CLUSTER of blocks
 	void TakeFreeBlock(File* f);						// Allocate 1 datablock + TB if needed
 	bool NoSlotsInTB(File* f);							// Check remaining spaces in the last TB
-	bool ExpandIfLT(File* f, size_t len);				// Allocate X blocks to fit [len] bytes 
+	bool ExpandIfLT(File* f, size_t len);				// Allocate blocks to fit [len] bytes 
 	void InitTB(File* file, uint32_t newAddr);
 	
-	std::tuple<uint32_t, uint32_t> GetPosLen(Sect info, uint32_t i);	// Converts section offsets to an absolute data position
+	std::tuple<uint32_t, uint32_t> GetPosLen(Sect info, uint32_t offset);	// Converts section offsets to an absolute data position
 	char* ReadInfo(Sect info, uint32_t i = 0);			// Get raw data from a specific Section
 	
-	uint32_t TakeFreeNode();							// Reserve one node
-	bool IsEmptyNode(short index);
-	bool IsFileNode(short index);
+	uint32_t TakeNode();								// Reserve one node
+	bool IsNodeEmpty(short index);
+	bool IsNodeFile(short index);
 	uint32_t GetNodeCode(short index);
-	uint32_t GetChildAddr(short index);
+	uint32_t GetNodeChild(short index);
 
 
 public:

@@ -60,7 +60,7 @@ d turpis efficitur, ultricies lorem a, suscipit augue."};
 		cout << vfs->Read(f, buff, pos) << " bytes read from file: " << f->GetName() << endl;
 		std::cout << "---Close-----------------------------------------\n";
 		vfs->Close(f);
-		std::cout << "---Close-----------------------------------------\n";
+		std::cout << "---Open-----------------------------------------\n";
 		vfs->Open(file);
 		std::cout << "---Read-ok---------------------------------------\n";
 		cout << vfs->Read(f, buff, pos) << " bytes read from file: " << f->GetName() << endl;
