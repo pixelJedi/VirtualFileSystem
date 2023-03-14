@@ -74,40 +74,10 @@ void File::AddDataBlock(uint32_t datablock)
 {
 	blocks.push_back(datablock);
 }
-///
-/// <returns>Number of the first empty byte from the last block's beginning</returns>
-uint64_t File::Fseekp() const
-{	
-	return uint64_t(_realSize % BLOCK);
-}
-
-/// <summary>
-/// Reads the next block of data, storing it in the buffer
-/// </summary>
-/// <returns>The number of bytes that are left to read</returns>
-size_t File::ReadNext(char* buffer)
-{
-	// TBD
-	return 0;
-}
-uint32_t File::GetCurDataBlock() const
-{
-	return uint32_t(blocks[_realSize/BLOCK]);
-}
-
-size_t File::GetRemainingSpace() const
-{
-	return size_t(CountDataBlocks() * BLOCK - _realSize);
-}
-
-uint32_t File::GetNextSlot() const
-{
-	return (CountDataBlocks() + 2) % (BLOCK / ADDR - 1) + 1;
-}
 
 uint32_t File::EstimateBlocksNeeded(size_t dataLength) const
 {
-	long long difference = dataLength - GetRemainingSpace();
+	long long difference = dataLength - GetRemainingSize();
 	return difference > 0 ? uint32_t(std::ceil(difference * 1.0 / BLOCK)) : 0;
 }
 
@@ -440,7 +410,6 @@ uint32_t VDisk::GetChildAddr(short index)
 
 void VDisk::InitTB(File* file, uint32_t newTBAddr)
 {
-	// todo: move the writing to the UpdateDisk, build data charset here
 	disk.SetBytes(file->GetLastTB() + addrMap[Sect::fd_nextTB], IntToChar(newTBAddr), ADDR);
 	file->SetLastTB(newTBAddr);
 	disk.SetBytes(newTBAddr + addrMap[Sect::fd_nextTB], IntToChar(newTBAddr), ADDR);
@@ -449,11 +418,11 @@ void VDisk::InitTB(File* file, uint32_t newTBAddr)
 
 	uint64_t totalBlocks = file->CountDataBlocks();
 	for (int i = 0; i < totalBlocks; ++i)
-		disk.SetBytes(GetAbsoluteAddrInBlock(file->GetMainTB(), addrMap[Sect::fd_firstDB] + i * ADDR), IntToChar(file->GetDataBlock(i)), ADDR);
+		disk.SetBytes(addrMap[Sect::s_blocks] + file->GetMainTB() * BLOCK + addrMap[Sect::fd_firstDB] + i * ADDR, IntToChar(file->GetDataBlock(i)), ADDR);
 }
 bool VDisk::ExpandIfLT(File* f, size_t len)
 {
-	uint32_t freeSpace = f->GetRemainingSpace();
+	uint32_t freeSpace = f->GetRemainingSize();
 	if (freeSpace < len)
 	{
 		uint32_t required = f->EstimateBlocksNeeded(len);
@@ -471,13 +440,6 @@ bool VDisk::ExpandIfLT(File* f, size_t len)
 		}
 	}
 	return false;
-}
-/// <summary>
-/// Byte number from the beginning of the disk
-/// </summary>
-uint64_t VDisk::GetAbsoluteAddrInBlock(uint32_t blockAddr, uint32_t offset) const
-{
-	return addrMap[Sect::s_blocks] + blockAddr * BLOCK + offset;
 }
 
 /*
@@ -508,7 +470,9 @@ std::string VDisk::PrintSpaceLeft() const
 
 void VDisk::PrintTree()
 {
+	std::cout << "-------------------------------------------\n";
 	std::cout << root->PrintVerticeTree();
+	std::cout << "-------------------------------------------\n";
 }
 
 /// <summary>
@@ -526,23 +490,6 @@ File* VDisk::SeekFile(const char* name) const
 		std::cout << e.what() << std::endl;
 		return nullptr;
 	}
-}
-uint32_t VDisk::AllocateNew(File* f, uint32_t nBlocks)
-{
-	uint32_t allocated = 0;
-	while (allocated!=nBlocks)
-	{
-		try
-		{
-			TakeFreeBlock(f);
-			++allocated;
-		}
-		catch (...)
-		{
-			break;
-		}
-	}
-	return allocated;
 }
 bool VDisk::NoSlotsInTB(File* f)
 {
@@ -606,7 +553,7 @@ File* VDisk::CreateFile(const char* name)
 size_t VDisk::WriteInFile(File* f, char* buff, size_t len)
 {
 	ExpandIfLT(f, len);
-	len = std::min(f->GetRemainingSpace(), len);
+	len = std::min(f->GetRemainingSize(), len);
 	size_t wrote = 0;
 	while (wrote!=len)
 	{
@@ -803,7 +750,7 @@ File* VFS::Open(const char* name)
 	return nullptr;
 }
 /// <summary>
-/// Opens or creates the file in writeonly mode. 
+/// Opens or creates the file in writeonly mode. Creates transit directories.
 /// </summary>
 /// <returns>nullptr if the file is already open.</returns>
 File* VFS::Create(const char* name)
@@ -842,6 +789,10 @@ File* VFS::Create(const char* name)
 	std::cout << "Failed to create file: " << name << std::endl;
 	return nullptr;
 }
+/// <summary>
+/// Reads bytes starting from the beginning of the file.
+/// </summary>
+/// <returns>Number of bytes actually read</returns>
 size_t VFS::Read(File* f, char* buff, size_t len)
 {
 	if (f->IsWriteMode()) {
@@ -853,6 +804,10 @@ size_t VFS::Read(File* f, char* buff, size_t len)
 	if (!vd) throw std::runtime_error("No disk found for the file");
 	return vd->ReadFromFile(f, buff, len);
 }
+/// <summary>
+/// Writes bytes to the end of the file.
+/// </summary>
+/// <returns>Number  of bytes actually written</returns>
 size_t VFS::Write(File* f, char* buff, size_t len)
 {
 	std::cout << "* Writing in file: " << f->GetName() << std::endl;
@@ -936,7 +891,9 @@ uint64_t CharToInt64(const char* bytes)
 	}
 	return data;
 }
-
+/// <summary>
+/// Dirty hack used to initialize VDisk constants which values are stored in the file which should be opened only after the initialization.
+/// </summary>
 char* OpenAndReadInfo(std::string filename, uint32_t position, const uint32_t length)
 {
 	char* data = new char[length];
@@ -949,12 +906,17 @@ char* OpenAndReadInfo(std::string filename, uint32_t position, const uint32_t le
 
 	return data;
 }
+/// <summary>
+/// Opens an existing file and calculates the size. 
+/// </summary>
 uint64_t GetDiskSize(std::string filename)
 {
 	std::ifstream in(filename, std::ifstream::ate | std::ifstream::binary);
 	return in.tellg();
 }
-
+/// <summary>
+/// Dirty hack for making two classes that depend on each other - Vertice and VDisk - communicate.
+/// </summary>
 void TreeToPlain(std::vector<char*>& info, Vertice<Node*>& tree, uint32_t& nodecode)
 {
 	// !todo: think of better implementation - tree logic should be hidden

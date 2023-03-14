@@ -52,7 +52,6 @@ struct Dir : public Node
 	Dir(uint32_t nodeAddr, std::string name, std::string fathername);
 	~Dir() {};
 };
-
 std::ostream& operator<<(std::ostream& s, const Node& node);
 
 /// <summary>
@@ -63,6 +62,7 @@ struct File : public Node
 {
 private:
 	inline static short MAX_READERS = 15;
+
 	uint64_t _realSize;				// Changed after writing, used for calculating position for write data
 	bool _writemode;
 	short _readmode_count;
@@ -70,36 +70,42 @@ private:
 	uint32_t _mainTB;
 	uint32_t _lastTB;
 
-	std::vector<uint32_t> blocks;	// Remember: addresses are ADDR length
+	std::vector<uint32_t> blocks;
 
 	char BuildFileMeta();
 public:
 
-	uint32_t GetMainTB() const { return _mainTB; };
-	uint32_t GetLastTB() const { return _lastTB; };
-	void SetLastTB(uint32_t addr) { _lastTB = addr; };
-	uint64_t GetSize() const { return _realSize; };
-	void IncreaseSize(uint32_t val) { _realSize += val; };
-	uint32_t CountDataBlocks() const { return blocks.size(); };
-	uint32_t GetCurDataBlock() const;
-	uint32_t GetDataBlock(uint32_t index) const { return blocks[index]; };
-	uint32_t GetLastDataBlock() const { return blocks.back(); };
-	size_t GetRemainingSpace() const;
-	uint32_t GetNextSlot() const; 
-	uint32_t EstimateBlocksNeeded(size_t dataLength) const;
+	// Getters
+
 	bool IsBusy() { return _writemode || _readmode_count; };
 	bool IsWriteMode() { return _writemode; };
 	short GetReaders() { return _readmode_count; };
+	uint32_t GetMainTB() const { return _mainTB; };
+	uint32_t GetLastTB() const { return _lastTB; };
+	uint64_t GetSize() const { return _realSize; };
+
+	uint32_t CountDataBlocks() const { return blocks.size(); };	
+	uint32_t GetCurDataBlock() const { return uint32_t(blocks[_realSize / BLOCK]); };	// Addr of the last written DB
+	uint32_t GetDataBlock(uint32_t index) const { return blocks[index]; };				// Addr of the index-th DB
+	uint32_t GetLastDataBlock() const { return blocks.back(); };						// Addr of the last allocated DB
+	uint64_t Fseekp() const { return uint64_t(_realSize % BLOCK); };					// Number of the first empty byte from the last block's beginning
+	size_t GetRemainingSize() const { return CountDataBlocks()* BLOCK - _realSize; };
+
+	// Setters
 
 	void FlipWriteMode();
 	void AddReader();
 	void RemoveReader();
+	void SetLastTB(uint32_t addr) { _lastTB = addr; };
+	void IncreaseSize(uint32_t val) { _realSize += val; };
+
+	// Other
+
+	uint32_t EstimateBlocksNeeded(size_t dataLength) const;	
 	void AddDataBlock(uint32_t datablock);
-
-	uint64_t Fseekp() const;
-	size_t ReadNext(char* buffer);		// TBD
-
 	char* NodeToChar(uint32_t nodeCode);
+
+	// Class
 
 	File() = delete;
 	File(uint32_t nodeAddr, uint32_t blockAddr, std::string name, std::string fathername, bool addCluster = true);
@@ -166,8 +172,9 @@ private:
 	BinDisk disk;					// Main data in/out stream
 	Vertice<Node*>* root;			// Hierarchy & search
 
-	Vertice<Node*>* LoadHierarchy(uint32_t start_index = 0);
-	void WriteHierarchy();
+	Vertice<Node*>* LoadHierarchy(uint32_t start_index = 0);	// Plain to tree
+	void WriteHierarchy();										// Tree to plain
+	void LoadFile(File* f);
 
 	bool InitDisk();									// Format new VDisk
 	bool UpdateDisk();									// Write data into the associated file
@@ -176,27 +183,22 @@ private:
 	uint32_t EstimateBlockCapacity(size_t size) const;
 	uint64_t EstimateMaxSize(uint64_t size) const;		// User's size is truncated so that all blocks are of BLOCK size
 	
-	uint32_t TakeFreeNode();
-	uint32_t ReserveCluster();
-	void TakeFreeBlock(File* f);
 	void UpdateBlockCounters(uint32_t count = 0);
+	uint32_t ReserveCluster();							// Reserve CLUSTER of blocks
+	void TakeFreeBlock(File* f);						// Allocate 1 datablock + TB if needed
+	bool NoSlotsInTB(File* f);							// Check remaining spaces in the last TB
+	bool ExpandIfLT(File* f, size_t len);				// Allocate X blocks to fit [len] bytes 
+	void InitTB(File* file, uint32_t newAddr);
 	
-	
-	std::tuple<uint32_t, uint32_t> GetPosLen(Sect info, uint32_t i);
+	std::tuple<uint32_t, uint32_t> GetPosLen(Sect info, uint32_t i);	// Converts section offsets to an absolute data position
 	char* ReadInfo(Sect info, uint32_t i = 0);			// Get raw data from a specific Section
 	
+	uint32_t TakeFreeNode();							// Reserve one node
 	bool IsEmptyNode(short index);
 	bool IsFileNode(short index);
 	uint32_t GetNodeCode(short index);
 	uint32_t GetChildAddr(short index);
 
-	void InitTB(File* file, uint32_t newAddr);
-	bool ExpandIfLT(File* f, size_t len);
-	uint32_t AllocateNew(File* f, uint32_t nBlocks);
-	bool NoSlotsInTB(File* f);
-	void LoadFile(File* f);
-
-	uint64_t GetAbsoluteAddrInBlock(uint32_t blockAddr, uint32_t offset) const;
 
 public:
 	std::string GetName() const { return name; };
@@ -204,7 +206,7 @@ public:
 	uint32_t GetBlocksLeft() const { return freeBlocks; };
 	uint32_t GetNodesLeft() const { return freeNodes; };
 
-	File* SeekFile(const char* name) const;
+	File* SeekFile(const char* name) const;					// Seeks for a file without creating it
 	File* CreateFile(const char* name);						// Reserves space for a new file
 	size_t WriteInFile(File* f, char* buff, size_t len);
 	size_t ReadFromFile(File* f, char* buff, size_t len);
@@ -260,7 +262,6 @@ public:
 
 /* ---Misc------------------------------------------------------------------ */
 
-void FillWithZeros(std::fstream& fs, size_t size);
 char* OpenAndReadInfo(std::string filename, uint32_t position, const uint32_t length);
 
 template<typename T> char* IntToChar(const T& data);
@@ -268,6 +269,6 @@ char* StrToChar(const std::string data);
 uint32_t CharToInt32(const char* bytes);
 uint64_t CharToInt64(const char* bytes);
 
-uint64_t GetDiskSize(std::string filename);	// Check real size of an existing file
+uint64_t GetDiskSize(std::string filename);	
 
 void TreeToPlain(std::vector<char*>& info, Vertice<Node*>& tree, uint32_t& nodecode);
