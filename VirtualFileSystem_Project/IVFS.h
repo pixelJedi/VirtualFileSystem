@@ -6,6 +6,7 @@
 #include <cmath>
 #include <algorithm>
 #include <memory>
+#include <mutex>
 #include "Vertice.h"
 
 /* ---Commmon--------------------------------------------------------------- */
@@ -61,7 +62,6 @@ std::ostream& operator<<(std::ostream& s, const Node& node);
 struct File : public Node
 {
 private:
-	inline static short MAX_READERS = 15;
 
 	uint64_t _realSize;				// Changed after writing, used for calculating position for write data
 	bool _writemode;
@@ -74,6 +74,7 @@ private:
 
 	char BuildFileMeta();
 public:
+	inline static short MAX_READERS = 15;
 
 	// Getters
 
@@ -172,6 +173,10 @@ private:
 	BinDisk disk;					// Main data in/out stream
 	Vertice<Node*>* root;			// Hierarchy & search
 
+	std::mutex blockReserve;
+	std::mutex nodeReserve;
+	std::mutex freeNodeReserve;
+
 	Vertice<Node*>* LoadHierarchy(uint32_t start_index = 0);	// Plain to tree
 	void WriteHierarchy();										// Tree to plain
 	void LoadFile(File* f);
@@ -214,6 +219,8 @@ public:
 	std::string PrintSpaceLeft() const;
 	void PrintTree();
 
+	std::mutex tree;	// Locks file hierarchy updates 
+
 	VDisk() = delete;
 	VDisk(const std::string fileName);						// Open existing VDisk
 	VDisk(const std::string fileName, const uint64_t size);	// Create new VDisk
@@ -246,6 +253,10 @@ private:
 	bool IsValidSize(size_t size);
 	VDisk* GetMostFreeDisk();
 	std::vector<VDisk*>::iterator GetDisk(std::string name);
+
+	std::mutex diskSelection;
+	std::mutex readAccessCheck;
+	std::mutex writeAccessCheck;
 public:
 	bool MountOrCreate(std::string& diskName);
 	bool Unmount(const std::string& diskName);

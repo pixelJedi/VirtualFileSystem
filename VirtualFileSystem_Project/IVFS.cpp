@@ -56,11 +56,11 @@ char File::BuildFileMeta()
 
 void File::AddReader()
 { 
-	_readmode_count = _readmode_count < MAX_READERS ? ++_readmode_count : MAX_READERS;
+	_readmode_count = _readmode_count < MAX_READERS ? _readmode_count + 1 : MAX_READERS;
 }
 void File::RemoveReader() 
 { 
-	_readmode_count = _readmode_count > 0 ? --_readmode_count : 0;
+	_readmode_count = _readmode_count > 0 ? _readmode_count - 1 : 0;
 }
 
 /// <returns>The number of blocks needed to be added to fit data</returns>
@@ -229,6 +229,7 @@ void VDisk::WriteHierarchy()
 	std::ostringstream info;
 
 	std::vector<char*> nodes;
+	std::lock_guard<std::mutex> lock(tree);
 	TreeToPlain(nodes, *root, nodecode);
 
 	std::cout << "Max nodecode: " << nodecode << std::endl;
@@ -265,6 +266,9 @@ bool VDisk::UpdateDisk()
 {
 	try
 	{
+		std::lock_guard<std::mutex> lock(blockReserve);
+		std::lock_guard<std::mutex> lock(nodeReserve);
+		std::lock_guard<std::mutex> lock(freeNodeReserve);
 		disk.SetBytes(addrMap[Sect::dd_fNodes], IntToChar(freeNodes), ADDR);
 		disk.SetBytes(addrMap[Sect::dd_fBlks], IntToChar(freeBlocks), ADDR);
 		disk.SetBytes(addrMap[Sect::dd_maxNode], IntToChar(maxNode), ADDR);
@@ -354,6 +358,7 @@ char* VDisk::ReadInfo(Sect info, uint32_t i)
 /// <returns>The node code</returns>
 uint32_t VDisk::TakeNode()
 {
+	std::lock_guard<std::mutex> lock(nodeReserve);
 	if (!freeNodes) throw std::logic_error("Failed to find a free node");
 	uint32_t curFree = maxNode - freeNodes;
 	--freeNodes;
@@ -361,6 +366,8 @@ uint32_t VDisk::TakeNode()
 }
 void VDisk::UpdateBlockCounters(uint32_t count)
 {
+	std::lock_guard<std::mutex> lock(blockReserve);
+	std::lock_guard<std::mutex> lock(freeNodeReserve);
 	nextFreeBlock+= count;
 	freeBlocks-=count;
 }
@@ -370,6 +377,8 @@ void VDisk::UpdateBlockCounters(uint32_t count)
 /// <returns>Address of the first allocated block</returns>
 uint32_t VDisk::ReserveCluster()
 {
+	std::lock_guard<std::mutex> lock(blockReserve);
+	std::lock_guard<std::mutex> lock(freeNodeReserve);
 	if (!freeBlocks) throw std::logic_error("Failed to get a free block");
 	uint32_t curFree = nextFreeBlock;	
 // todo: allow to 1) allocate less than a cluster, and 2) non-neighbour blocks, 3) implement proper tracking of busy block, e.g. through bitmap
@@ -383,6 +392,7 @@ uint32_t VDisk::ReserveCluster()
 /// </summary>
 void VDisk::TakeFreeBlock(File* f)
 {
+	std::lock_guard<std::mutex> lock(blockReserve);
 	if (!freeBlocks) throw std::logic_error("Failed to get a free block");
 	f->AddDataBlock(nextFreeBlock);
 	UpdateBlockCounters(1);
@@ -415,7 +425,6 @@ uint32_t VDisk::GetNodeChild(short index)
 /// </summary>
 void VDisk::InitTB(File* file, uint32_t newTBAddr)
 {
-	// Draft.
 	disk.SetBytes(addrMap[Sect::s_blocks] + file->GetLastTB() * BLOCK + addrMap[Sect::fd_nextTB], IntToChar(newTBAddr), ADDR);
 	file->SetLastTB(newTBAddr);
 	disk.SetBytes(addrMap[Sect::s_blocks] + newTBAddr * BLOCK + addrMap[Sect::fd_nextTB], IntToChar(newTBAddr), ADDR);
@@ -555,7 +564,10 @@ File* VDisk::CreateFile(const char* name)
 		uint32_t freeNode = TakeNode();
 		File* f = new File(freeNode, ReserveCluster(), name, this->name);
 		Node* t = f;
+
+		tree.lock();
 		root->Add(name, t);
+		tree.unlock();
 		InitTB(f, f->GetLastTB());
 		UpdateDisk();
 		return f;
@@ -719,6 +731,7 @@ bool VFS::Unmount(const std::string& diskName)
 }
 VDisk* VFS::GetMostFreeDisk()
 {
+	std::lock_guard<std::mutex> lock(diskSelection);
 	if (!disks.size()) return nullptr;
 	VDisk* chosenDisk = nullptr;
 	uint32_t max_blocks = 0;
@@ -756,7 +769,8 @@ File* VFS::Open(const char* name)
 	for (const auto& disk : disks)
 	{
 		file = disk->SeekFile(name);
-		if (file && !(file->IsWriteMode()))
+		std::lock_guard<std::mutex> lock(readAccessCheck);
+		if (file && !(file->IsWriteMode()) && file->GetReaders() < file->MAX_READERS)
 		{
 			file->AddReader();
 			std::cout << "successful" << name << std::endl;
@@ -778,19 +792,23 @@ File* VFS::Create(const char* name)
 	if (disks.empty()) throw std::out_of_range("No disks mounted");
 	else
 	{
-		VDisk* mostFreeDisk = disks[0];
 		for (const auto& disk : disks)
 		{
 			file = disk->SeekFile(name);
+			writeAccessCheck.lock();
 			if (file && !(file->IsBusy()))
 			{
 				std::cout << "file found" << std::endl;
 				file->FlipWriteMode();
 				return file;
 			}
+			writeAccessCheck.unlock();
 		}
 		std::cout << "file not found, creating ..." << std::endl;
+		diskSelection.lock();
+		VDisk* mostFreeDisk = disks[0];
 		file = GetMostFreeDisk()->CreateFile(name);
+		diskSelection.unlock();
 
 		if (file)
 		{
