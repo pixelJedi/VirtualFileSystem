@@ -229,7 +229,6 @@ void VDisk::WriteHierarchy()
 	std::ostringstream info;
 
 	std::vector<char*> nodes;
-	std::lock_guard<std::mutex> lock(tree);
 	TreeToPlain(nodes, *root, nodecode);
 
 	std::cout << "Max nodecode: " << nodecode << std::endl;
@@ -266,9 +265,9 @@ bool VDisk::UpdateDisk()
 {
 	try
 	{
-		std::lock_guard<std::mutex> lock(blockReserve);
-		std::lock_guard<std::mutex> lock(nodeReserve);
-		std::lock_guard<std::mutex> lock(freeNodeReserve);
+		std::lock_guard<std::mutex> lockblock(blockReserve);
+		std::lock_guard<std::mutex> locknode(nodeReserve);
+		std::lock_guard<std::mutex> lockfnode(freeNodeReserve);
 		disk.SetBytes(addrMap[Sect::dd_fNodes], IntToChar(freeNodes), ADDR);
 		disk.SetBytes(addrMap[Sect::dd_fBlks], IntToChar(freeBlocks), ADDR);
 		disk.SetBytes(addrMap[Sect::dd_maxNode], IntToChar(maxNode), ADDR);
@@ -366,8 +365,8 @@ uint32_t VDisk::TakeNode()
 }
 void VDisk::UpdateBlockCounters(uint32_t count)
 {
-	std::lock_guard<std::mutex> lock(blockReserve);
-	std::lock_guard<std::mutex> lock(freeNodeReserve);
+	std::lock_guard<std::mutex> lockblock(blockReserve);
+	std::lock_guard<std::mutex> lockbode(freeNodeReserve);
 	nextFreeBlock+= count;
 	freeBlocks-=count;
 }
@@ -377,8 +376,8 @@ void VDisk::UpdateBlockCounters(uint32_t count)
 /// <returns>Address of the first allocated block</returns>
 uint32_t VDisk::ReserveCluster()
 {
-	std::lock_guard<std::mutex> lock(blockReserve);
-	std::lock_guard<std::mutex> lock(freeNodeReserve);
+	std::lock_guard<std::mutex> lockblock(blockReserve);
+	std::lock_guard<std::mutex> lockbode(freeNodeReserve);
 	if (!freeBlocks) throw std::logic_error("Failed to get a free block");
 	uint32_t curFree = nextFreeBlock;	
 // todo: allow to 1) allocate less than a cluster, and 2) non-neighbour blocks, 3) implement proper tracking of busy block, e.g. through bitmap
@@ -565,9 +564,8 @@ File* VDisk::CreateFile(const char* name)
 		File* f = new File(freeNode, ReserveCluster(), name, this->name);
 		Node* t = f;
 
-		tree.lock();
+		std::lock_guard<std::mutex> lock(tree);
 		root->Add(name, t);
-		tree.unlock();
 		InitTB(f, f->GetLastTB());
 		UpdateDisk();
 		return f;
@@ -795,27 +793,24 @@ File* VFS::Create(const char* name)
 		for (const auto& disk : disks)
 		{
 			file = disk->SeekFile(name);
-			writeAccessCheck.lock();
-			if (file && !(file->IsBusy()))
+			if (file)
 			{
-				std::cout << "file found" << std::endl;
-				file->FlipWriteMode();
+				std::lock_guard<std::mutex> waccess(writeAccessCheck);
+				if (!(file->IsBusy()))
+				{
+					std::cout << "file found" << std::endl;
+					file->FlipWriteMode();
+				}
 				return file;
 			}
-			writeAccessCheck.unlock();
 		}
 		std::cout << "file not found, creating ..." << std::endl;
-		diskSelection.lock();
 		VDisk* mostFreeDisk = disks[0];
 		file = GetMostFreeDisk()->CreateFile(name);
-		diskSelection.unlock();
-
 		if (file)
 		{
 			// debug code
-			std::cout << "dbg-----------------------------------" << std::endl;
 			mostFreeDisk->PrintTree();
-			std::cout << "dbg-----------------------------------" << std::endl;
 			// <- debug ends here
 			std::cout << "Created file: " << name << std::endl;
 			return file;

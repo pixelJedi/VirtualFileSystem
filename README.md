@@ -2,7 +2,7 @@
 The **VFS** (Virtual File System) is used for managing thousands of files packed in a few physical ones, which can be useful in systems with read/write limitations. This implementation is being developed mostly for educational purposes.
 
 > :radioactive: The system is currently under development, use it on your own risk. The repo is public only because stars wanted it to be this way. All recent changes commited for for educational purposes only.<br/>
-> The description below describes the general concept. If you want to check known issues, jump to the [FAQ](https://github.com/pixelJedi/VirtualFileSystem#faq).
+> The description below describes the general concept. If you want to know more, jump to the [FAQ](https://github.com/pixelJedi/VirtualFileSystem#faq).
 
 The current implementation uses *command line interface* to prompt parameters and log intermediate results.
 
@@ -35,6 +35,15 @@ Each VDisk has an assigned physical file. Before working with the file, the user
 It's possible to mount and unmount VDisks by providing names of corresponding files:
 - [x] `MountOrCreate(string filename)`:		if not found, asks 1) if the new VDisk should be created, and 2) the size. The size can be truncated to accommodate an integer number of blocks calculated during the initial estimation;
 - [x] `Unmount(string filename)`: 		closes the disk.
+
+
+### Multithreading
+
+VFS operations may be used by multiple threads. The shared data should be protected against collisions.
+- The protected are VDisk variables: **freeBlocks**, **freeNodes** and **nextFreeBlock** as functions rely on these counters when allocating data. The protection is implemented as a simple mutex guard lock.
+- Another thing to concern is the **file access status**. The guard wraps code where it's checked and changed.
+- And also the Node tree (VDisk::root) becomes locked when a new file is added. 
+- Access to file blocks is not intended to be protected with mutex, as it's already safe with access flags. 
 
 ## VDisk
 Each VDisk is assosiated with a physical file in the underlying file system.
@@ -178,9 +187,7 @@ Oh yeah! After some weeks you can not only mount and unmount VDisks, but also wr
 
 > **5. What about multithreading?**
 
-I was planning to make this work using mutexes to prevent working with outdated data. I'm rather new to it, so maybe I'll learn a more effective way (I've heard mutex causes system calls which slow down the process).
-Files store the flags on reading and writing - a mutex should check it before opening a File.
-Also the threads may change the DiskData - there should also be mutex, guarding the collisions.
+There are trivial mutexes (wrapped in std::lock_guard) to prevent working with outdated data. I'm rather new to it, so maybe I'll learn a more effective way (I've heard mutex causes system calls which slow down the process). 
 
 > **6. What was this about learning? Didn't you know what are you dealing with?**
 
