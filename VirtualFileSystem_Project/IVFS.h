@@ -21,48 +21,18 @@
 #define NODENAME	NODEDATA-2*ADDR-NODEMETA	// Reserved per node name, bytes
 // todo: think of better const handling
 
-/* ---Node-|-File----------------------------------------------------------- */
-
-struct Node
-{
-protected:
-
-	std::string _fathername;
-	std::string _name;
-	uint32_t _nodeAddr;
-
-public:
-
-	std::string GetName() { return _name; };
-	std::string GetFather() { return _fathername; };
-	uint32_t GetNode() const { return _nodeAddr; };
-
-	virtual char* NodeToChar(uint32_t nodeCode) = 0;
-
-	Node(uint32_t nodeAddr, std::string name, std::string fathername);
-	virtual ~Node() {};
-
-	friend std::ostream& operator<<(std::ostream& s, const Node& node);
-};
-
-struct Dir : public Node
-{
-	char* NodeToChar(uint32_t nodeCode);
-
-	Dir() = delete;
-	Dir(uint32_t nodeAddr, std::string name, std::string fathername);
-	~Dir() {};
-};
-std::ostream& operator<<(std::ostream& s, const Node& node);
+/* ---File------------------------------------------------------------------ */
 
 /// <summary>
 /// The complex pointer used for locating file datablocks on VDisk.
 /// On VDisk File is represented by node in node area and by data blocks in data area.
 /// </summary>
-struct File : public Node
+struct File
 {
 private:
 
+	std::string _fathername;
+	std::string _name;
 	uint64_t _realSize;				// Changed after writing, used for calculating position for write data
 	bool _writemode;
 	short _readmode_count;
@@ -78,6 +48,8 @@ public:
 
 	// Getters
 
+	std::string GetName() { return _name; };
+	std::string GetFather() { return _fathername; };
 	bool IsBusy() { return _writemode || _readmode_count; };
 	bool IsWriteMode() { return _writemode; };
 	short GetReaders() { return _readmode_count; };
@@ -89,7 +61,7 @@ public:
 	uint32_t GetCurDataBlock() const { return uint32_t(blocks[_realSize / BLOCK]); };	// Addr of the last written DB
 	uint32_t GetDataBlock(uint32_t index) const { return blocks[index]; };				// Addr of the index-th DB
 	uint32_t GetLastDataBlock() const { return blocks.back(); };						// Addr of the last allocated DB
-	uint64_t Fseekp() const { return uint64_t(_realSize % BLOCK); };					// Number of the first empty byte from the last block's beginning
+	uint32_t Fseekp() const { return uint32_t(_realSize % BLOCK); };					// Number of the first empty byte from the last block's beginning
 	size_t GetRemainingSize() const { return CountDataBlocks()* BLOCK - _realSize; };
 
 	// Setters
@@ -102,16 +74,19 @@ public:
 
 	// Other
 
-	uint32_t EstimateBlocksNeeded(size_t dataLength) const;	
+	uint32_t EstimateBlocksNeeded(size_t dataLength) const;
+	std::string ParseLast(std::string path, char delim = '\\');
 	char* NodeToChar(uint32_t nodeCode);
 	void AddDataBlock(uint32_t datablock) { blocks.push_back(datablock); };
+	friend std::ostream& operator<<(std::ostream& s, const File& node);
 
 	// Class
 
 	File() = delete;
-	File(uint32_t nodeAddr, uint32_t blockAddr, std::string name, std::string fathername, bool addCluster = true);
+	File(uint32_t blockAddr, std::string name, std::string fathername, bool addCluster = true);
 	~File() {};
 };
+std::ostream& operator<<(std::ostream& s, const File& node);
 
 /* ---BinDisk--------------------------------------------------------------- */
 
@@ -171,13 +146,11 @@ private:
 	uint32_t nextFreeBlock;
 
 	BinDisk disk;					// Main data in/out stream
-	Vertice<Node*>* root;			// Hierarchy & search
+	Vertice<File*>* root;			// Hierarchy & search
 
-	std::mutex blockReserve;
-	std::mutex nodeReserve;
-	std::mutex freeNodeReserve;
+	std::mutex blockReserve, nodeReserve, freeNodeReserve;
 
-	Vertice<Node*>* LoadHierarchy(uint32_t start_index = 0);	// Plain to tree
+	Vertice<File*>* LoadHierarchy(uint32_t start_index = 0);	// Plain to tree
 	void WriteHierarchy();										// Tree to plain
 	void LoadFile(File* f);
 
@@ -198,7 +171,7 @@ private:
 	std::tuple<uint32_t, uint32_t> GetPosLen(Sect info, uint32_t offset);	// Converts section offsets to an absolute data position
 	char* ReadInfo(Sect info, uint32_t i = 0);			// Get raw data from a specific Section
 	
-	uint32_t TakeNode();								// Reserve one node
+	uint32_t TakeNode(uint32_t size);					// Reserve one node
 	bool IsNodeEmpty(short index);
 	bool IsNodeFile(short index);
 	uint32_t GetNodeCode(short index);
@@ -211,8 +184,8 @@ public:
 	uint32_t GetBlocksLeft() const { return freeBlocks; };
 	uint32_t GetNodesLeft() const { return freeNodes; };
 
-	File* SeekFile(const char* name) const;					// Seeks for a file without creating it
-	File* CreateFile(const char* name);						// Reserves space for a new file
+	File* SeekFile(const char* path) const;					// Seeks for a file without creating it
+	File* CreateFile(const char* path);						// Reserves space for a new file
 	size_t WriteInFile(File* f, char* buff, size_t len);
 	size_t ReadFromFile(File* f, char* buff, size_t len);
 
@@ -279,7 +252,9 @@ template<typename T> char* IntToChar(const T& data);
 char* StrToChar(const std::string data);
 uint32_t CharToInt32(const char* bytes);
 uint64_t CharToInt64(const char* bytes);
+char* DirToChar(uint32_t nodecode, std::string name, uint32_t firstchild);
 
 uint64_t GetDiskSize(std::string filename);	
 
-void TreeToPlain(std::vector<char*>& info, Vertice<Node*>& tree, uint32_t& nodecode);
+void TreeToPlain(std::vector<char*>& info, Vertice<File*>& tree, uint32_t& nodecode);
+uint32_t CountNodes(const std::string path); // todo: use Path class for all path operations

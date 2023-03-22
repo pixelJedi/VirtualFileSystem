@@ -5,48 +5,15 @@
 #include <limits>
 #include <filesystem>
 #include <bitset>
+#include <queue>
 
-/* ---Node-|-File----------------------------------------------------------- */
+/* ---File------------------------------------------------------------------ */
 
-Node::Node(uint32_t nodeAddr, std::string name, std::string fathername)
+std::ostream& operator<<(std::ostream& s, const File& node)
 {
-	_name = name;
-	_name.resize(NODENAME);
-	_nodeAddr = nodeAddr;
-	_fathername = fathername;
-}
-std::ostream& operator<<(std::ostream& s, const Node& node)
-{
-	return s << node._nodeAddr;
+	return s << node._name;
 }
 
-Dir::Dir(uint32_t nodeAddr, std::string name, std::string fathername) : Node(nodeAddr, name, fathername){}
-
-char* Dir::NodeToChar(uint32_t nodeCode)
-{
-	try
-	{
-		char* newNode = new char[NODEDATA];
-		short ibyte = 0;
-		// Node code
-		for (; ibyte < ADDR; ++ibyte)
-			newNode[ibyte] = IntToChar(nodeCode)[ibyte];
-		// Metadata
-		for (; ibyte < NODEMETA; ++ibyte)
-			newNode[ibyte] = char(0b10000000);
-		// Name
-		for (; ibyte < NODENAME; ++ibyte)
-			newNode[ibyte] = _name[ibyte - (ADDR + 1)];
-		// File address
-		for (; ibyte < ADDR; ++ibyte)
-			newNode[ibyte] = IntToChar(_nodeAddr)[ibyte];
-		return newNode;
-	}
-	catch (...)
-	{
-		return nullptr;
-	}
-}
 char File::BuildFileMeta()
 {
 	std::bitset<8> metabitset(_readmode_count);
@@ -70,42 +37,46 @@ uint32_t File::EstimateBlocksNeeded(size_t dataLength) const
 	return difference > 0 ? uint32_t(std::ceil(difference * 1.0 / BLOCK)) : 0;
 }
 
-char* File::NodeToChar(uint32_t nodeCode)
+std::string File::ParseLast(std::string path, char delim)
 {
-	try
-	{
-		char* newNode = new char[NODEDATA];
-		short i, ibyte = 0;
-		// Node code
-		for (i = 0; i < ADDR; ++i, ++ibyte)
-			newNode[ibyte] = IntToChar(nodeCode)[i];
-		// Metadata
-		newNode[ibyte] = BuildFileMeta(); ++ibyte;
-		// Name
-		for (i = 0; i < NODENAME; ++i, ++ibyte)
-			newNode[ibyte] = _name[i];
-		// File address
-		for (i = 0; i < ADDR; ++i, ++ibyte)
-			newNode[ibyte] = IntToChar(_nodeAddr)[i];
-		return newNode;
-	}
-	catch (...)
-	{
-		return nullptr;
-	}
+	auto pos = path.find_last_of(delim);
+	return pos < path.length() ? std::string{ path.substr(pos + 1, path.length()) } : path;
 }
 
-File::File(uint32_t nodeAddr, uint32_t blockAddr, std::string name, std::string fathername, bool addCluster) : Node(nodeAddr, name, fathername)
+char* File::NodeToChar(uint32_t nodeCode)
 {
+	char* newNode = new char[NODEDATA];
+	short i, ibyte = 0;
+	// Node code
+	for (i = 0; i < ADDR; ++i, ++ibyte)
+		newNode[ibyte] = IntToChar(nodeCode)[i];
+	// Metadata
+	newNode[ibyte] = BuildFileMeta(); ++ibyte;
+	// Name
+	auto name = _name;
+	name.resize(NODENAME);
+	for (i = 0; i < NODENAME; ++i, ++ibyte)
+		newNode[ibyte] = name[i];
+	// File address
+	for (i = 0; i < ADDR; ++i, ++ibyte)
+		newNode[ibyte] = IntToChar(_mainTB)[i];
+	return newNode;
+}
+
+File::File(uint32_t blockAddr, std::string name, std::string fathername, bool addCluster)
+{
+	_name = ParseLast(name);
+	_fathername = fathername;
 	_realSize = 0;
 	_writemode = false;
 	_readmode_count = 0;
 	_lastTB = _mainTB = blockAddr;
-	blockAddr++;
 
 	if (addCluster)
-		for(int i = 0;i<CLUSTER; ++i)
+	{
+		for(int i = 1;i<CLUSTER; ++i)
 			blocks.push_back(blockAddr+i);
+	}
 }
 
 /* ---BinDisk--------------------------------------------------------------- */
@@ -187,7 +158,7 @@ uint64_t VDisk::EstimateMaxSize(uint64_t size) const
 /// </summary>
 /// <param name="start_index">The node address to start read. Used to jump between recursion levels</param>
 /// <returns></returns>
-Vertice<Node*>* VDisk::LoadHierarchy(uint32_t start_index)
+Vertice<File*>* VDisk::LoadHierarchy(uint32_t start_index)
 {
 	/* Algorithm:
 	1. Add root Vertice for this NC.
@@ -198,24 +169,24 @@ Vertice<Node*>* VDisk::LoadHierarchy(uint32_t start_index)
 	4.2.1 Call LoadHierarchy(<child's node addr as parameter>) and bind the result to root.
 	*/
 
-	Vertice<Node*>* root = new Vertice<Node*>();	// [1]
+	Vertice<File*>* root = new Vertice<File*>();	// [1]
 	uint32_t curr_nc = GetNodeCode(start_index);	// [2]
 
 	for (uint32_t i = start_index; i != maxNode - freeNodes && curr_nc == GetNodeCode(i); ++i)  // [3]
 	{
-		Node* node;
+		File* node = nullptr;
 		char* filename = ReadInfo(Sect::nd_name, i);
 		uint32_t addr = GetNodeChild(i);
 
-		if (IsNodeFile(i))
+		bool isFile = IsNodeFile(i);
+		if (isFile)
 		{
-			node = new File(i, addr, filename, this->name, false);
-			LoadFile((File*)node);
+			node = new File(addr, filename, this->name, false);
+			LoadFile(node);
 		}
-		else
-			node = new Dir(i, filename, this->name);
 		root->Add(std::string{ filename }, node);	// [4]
-		if (!IsNodeFile(i))	root->BindNewTreeToChild(filename, LoadHierarchy(addr));
+		if (!isFile)
+			root->BindNewTreeToChild(filename, LoadHierarchy(addr));
 	}
 
 	return root;
@@ -355,12 +326,12 @@ char* VDisk::ReadInfo(Sect info, uint32_t i)
 /// Checks for node availability and updates FreeNodes counter
 /// </summary>
 /// <returns>The node code</returns>
-uint32_t VDisk::TakeNode()
+uint32_t VDisk::TakeNode(uint32_t size)
 {
 	std::lock_guard<std::mutex> lock(nodeReserve);
-	if (!freeNodes) throw std::logic_error("Failed to find a free node");
+	if (freeNodes < size) throw std::logic_error("Failed to find a free node");
 	uint32_t curFree = maxNode - freeNodes;
-	--freeNodes;
+	freeNodes -= size;
 	return curFree;
 }
 void VDisk::UpdateBlockCounters(uint32_t count)
@@ -432,12 +403,13 @@ void VDisk::InitTB(File* file, uint32_t newTBAddr)
 		disk.SetBytes(addrMap[Sect::s_blocks] + newTBAddr * BLOCK + addrMap[Sect::fd_realSize], IntToChar(file->GetSize()), 2 * ADDR);
 	}
 
+	uint64_t totalBlocks = file->CountDataBlocks();
 	if (file->GetMainTB() == newTBAddr)
 	{
-		uint64_t totalBlocks = file->CountDataBlocks();
 		for (int i = 0; i < totalBlocks; ++i)
 			disk.SetBytes(addrMap[Sect::s_blocks] + newTBAddr * BLOCK + addrMap[Sect::fd_firstDB] + i * ADDR, IntToChar(file->GetDataBlock(i)), ADDR);
 	}
+	disk.SetBytes(addrMap[Sect::s_blocks] + newTBAddr * BLOCK + addrMap[Sect::fd_firstDB] + totalBlocks * ADDR, IntToChar(newTBAddr), ADDR);
 }
 /// <summary>
 /// Evaluates blocks needed to fit [len] bytes and allocates them
@@ -501,11 +473,11 @@ void VDisk::PrintTree()
 /// Checks if the file exists on disk, tracking down path through the Node section
 /// </summary>
 /// <returns>File* if file exists, nullptr otherwise</returns>
-File* VDisk::SeekFile(const char* name) const
+File* VDisk::SeekFile(const char* path) const
 {
 	try
 	{
-		return (File*)root->GetData(name);
+		return (File*)root->GetData(path);
 	}
 	catch (std::logic_error& e)
 	{
@@ -556,16 +528,15 @@ void VDisk::LoadFile(File* f)
 /// Reserves and initializes space for a new file. 
 /// Writes all data required to the disk.
 /// </summary>
-File* VDisk::CreateFile(const char* name)
+File* VDisk::CreateFile(const char* path)
 {
 	try
 	{
-		uint32_t freeNode = TakeNode();
-		File* f = new File(freeNode, ReserveCluster(), name, this->name);
-		Node* t = f;
+		TakeNode(CountNodes(path));
+		File* f = new File(ReserveCluster(), path, this->name);
 
 		std::lock_guard<std::mutex> lock(tree);
-		root->Add(name, t);
+		root->Add(path, f);
 		InitTB(f, f->GetLastTB());
 		UpdateDisk();
 		return f;
@@ -582,23 +553,25 @@ size_t VDisk::WriteInFile(File* f, char* buff, size_t len)
 	ExpandIfLT(f, len);
 	len = std::min(f->GetRemainingSize(), len);
 	size_t wrote = 0;
+	uint32_t pos;
 	while (wrote!=len)
 	{
 		try
 		{
-			uint32_t ilen = std::min(BLOCK - f->Fseekp(), len-wrote);
-			uint32_t pos = std::get<0>(GetPosLen(Sect::s_blocks, f->GetCurDataBlock())) + f->Fseekp();
+			uint32_t ilen = std::min(size_t(BLOCK - f->Fseekp()), len-wrote);
+			pos = std::get<0>(GetPosLen(Sect::s_blocks, f->GetCurDataBlock())) + f->Fseekp();
 			disk.SetBytes(pos, &buff[wrote], ilen);
 			f->IncreaseSize(ilen);
 			wrote += ilen;
-			pos = std::get<0>(GetPosLen(Sect::fd_realSize, f->GetMainTB()));
-			disk.SetBytes(pos, IntToChar(f->GetSize()), 2 * ADDR);
 		}
-		catch (...)
+		catch (std::domain_error &e)
 		{
+			std::cout << e.what();
 			break;
 		}
 	}
+	pos = std::get<0>(GetPosLen(Sect::fd_realSize, f->GetMainTB()));
+	disk.SetBytes(pos, IntToChar(f->GetSize()), 2 * ADDR);
 	return wrote;
 }
 
@@ -627,10 +600,11 @@ VDisk::VDisk(const std::string fileName):
 {
 	addrMap[Sect::s_blocks] = DISKDATA + maxNode * NODEDATA;
 	disk.Open(fileName);
-	root = LoadHierarchy();
 	freeNodes = CharToInt32(ReadInfo(Sect::dd_fNodes));
 	freeBlocks = CharToInt32(ReadInfo(Sect::dd_fBlks));
 	nextFreeBlock = CharToInt32(ReadInfo(Sect::dd_nextFreeBlk));
+	root = LoadHierarchy();
+
 	std::cout << "Disk \"" << name << "\" opened\n";
 }
 /// Creating new disk 
@@ -642,7 +616,8 @@ VDisk::VDisk(const std::string fileName, const uint64_t size) :
 {
 	addrMap[Sect::s_blocks] = DISKDATA + maxNode * NODEDATA;
 	disk.Open(fileName, true);
-	root = new Vertice<Node*>();
+	root = new Vertice<File*>();
+
 	if (!InitDisk()) throw std::runtime_error("Initialization failed");
 	else std::cout << "Disk \"" << name << "\" initialized\n";
 }
@@ -698,7 +673,7 @@ bool VFS::MountOrCreate(std::string& diskName)
 			std::cout << "Disk \"" << diskName << "\" was not mounted\n";
 			break;
 		default:
-			throw std::invalid_argument("Bad input. Try again");
+			throw std::invalid_argument("Bad input. Try again -> ");
 			break;
 		}
 	}
@@ -806,9 +781,11 @@ File* VFS::Create(const char* name)
 		}
 		std::cout << "file not found, creating ..." << std::endl;
 		VDisk* mostFreeDisk = disks[0];
+		// The most free disk is selected
 		file = GetMostFreeDisk()->CreateFile(name);
 		if (file)
 		{
+			file->FlipWriteMode();
 			// debug code
 			mostFreeDisk->PrintTree();
 			// <- debug ends here
@@ -861,7 +838,6 @@ void VFS::Close(File* f)
 			std::cout << "File \"" << f->GetName() << "\": "<< f->GetReaders() <<" readers remain\n";
 		}
 	}
-	std::cout << "File closed: " << f->GetName() << std::endl;
 }
 
 VFS::VFS()
@@ -947,18 +923,62 @@ uint64_t GetDiskSize(std::string filename)
 /// <summary>
 /// Dirty hack for making two classes that depend on each other - Vertice and VDisk - communicate.
 /// </summary>
-void TreeToPlain(std::vector<char*>& info, Vertice<Node*>& tree, uint32_t& nodecode)
+void TreeToPlain(std::vector<char*>& info, Vertice<File*>& tree, uint32_t& nodecode)
 {
 	// !todo: think of better implementation - tree logic should be hidden
 	if (!tree._children.empty())
 	{
+		std::queue<uint32_t> dirs;
 		for (auto iter = tree._children.begin(); iter != tree._children.end(); ++iter)
-			info.push_back(&(*(*((*iter).second.first))->NodeToChar(nodecode)));
+		{
+			char* plainnode;
+			if ((*iter).second.first)	// == is file
+			{
+				plainnode = &(*(*((*iter).second.first))->NodeToChar(nodecode));
+			}
+			else
+			{
+				plainnode = nullptr;	// have to update childaddr later
+				dirs.push(info.size());
+			}
+			info.push_back(plainnode);
+		}
+		uint32_t curdirnode = nodecode;
 		for (auto iter = tree._children.begin(); iter != tree._children.end(); ++iter)
 			if ((*iter).second.second)
 			{
+				auto dirnode = DirToChar(curdirnode, (*iter).first, info.size());
 				++nodecode;
 				TreeToPlain(info, *(*iter).second.second, nodecode);
+				info.at(dirs.front()) = dirnode;
+				dirs.pop();
 			}
 	}
+}
+
+char* DirToChar(uint32_t nodecode, std::string name, uint32_t firstchild)
+{
+	char* newNode = new char[NODEDATA];
+	short i, ibyte = 0;
+	// Node code
+	for (i = 0; i < ADDR; ++i, ++ibyte)
+		newNode[ibyte] = IntToChar(nodecode)[i];
+	// Metadata
+	newNode[ibyte] = char(0b10000000); ++ibyte;
+	// Name
+	name.resize(NODENAME);
+	for (i = 0; i < NODENAME; ++i, ++ibyte)
+		newNode[ibyte] = name[i];
+	// File address
+	for (i = 0; i < ADDR; ++i, ++ibyte)
+		newNode[ibyte] = IntToChar(firstchild)[i];
+	return newNode;
+}
+
+uint32_t CountNodes(const std::string path)
+{
+	uint32_t count = 1;
+	for (uint32_t i = 0; i < path.size(); i++)
+		if (path[i] == '\\') count++;
+	return count;
 }

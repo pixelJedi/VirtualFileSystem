@@ -15,7 +15,7 @@ public:
 
 	void Add(std::string_view path, const T& data);	// Creates all the vertices within path, with data generated on the flow
 	void Destroy();									// Recursively deletes all the children tree
-	void BindNewTreeToChild(const std::string& name, Vertice* nodePtr, bool deleteData = true);
+	void BindNewTreeToChild(const std::string& name, Vertice* nodePtr, bool deleteData = false);
 
 	T GetData(std::string_view path);
 	uint32_t Count();
