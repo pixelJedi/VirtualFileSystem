@@ -759,42 +759,48 @@ File* VFS::Open(const char* name)
 /// <returns>nullptr if the file is already open.</returns>
 File* VFS::Create(const char* name)
 {
+	if (disks.empty()) throw std::out_of_range("No disks mounted");
+
 	std::cout << "* Trying to open " << name << " (write mode) -> ";
 	File* file = nullptr;
 
-	if (disks.empty()) throw std::out_of_range("No disks mounted");
-	else
+	// Searching for an existing file
+	for (const auto& disk : disks)
 	{
-		for (const auto& disk : disks)
+		file = disk->SeekFile(name);
+		if (file) break;
+	}
+
+	// Creating new file
+	if (!file)
+	{
+		std::cout << "file not found -> ";
+		VDisk* mostFreeDisk = GetMostFreeDisk();
+		if (mostFreeDisk)
 		{
-			file = disk->SeekFile(name);
-			if (file)
-			{
-				std::lock_guard<std::mutex> waccess(writeAccessCheck);
-				if (!(file->IsBusy()))
-				{
-					std::cout << "file found" << std::endl;
-					file->FlipWriteMode();
-				}
-				return file;
-			}
+			file = mostFreeDisk->CreateFile(name);
+
+			if (file) std::cout << "created -> ";
+			else std::cout << "failed to create" << std::endl;
 		}
-		std::cout << "file not found, creating ..." << std::endl;
-		VDisk* mostFreeDisk = disks[0];
-		// The most free disk is selected
-		file = GetMostFreeDisk()->CreateFile(name);
-		if (file)
+		else std::cout << "no space left" << std::endl;
+	}
+	else std::cout << "file found -> ";
+
+	// Flagging write access
+	if (file)
+	{
+		std::lock_guard<std::mutex> waccess(writeAccessCheck);
+		if (!(file->IsBusy()))
 		{
 			file->FlipWriteMode();
-			// debug code
-			mostFreeDisk->PrintTree();
-			// <- debug ends here
-			std::cout << "Created file: " << name << std::endl;
-			return file;
+			std::cout << "opened" << std::endl;
 		}
+		else
+			std::cout << "is already busy" << std::endl;
 	}
-	std::cout << "Failed to create file: " << name << std::endl;
-	return nullptr;
+
+	return file;
 }
 /// <summary>
 /// Reads bytes starting from the beginning of the file.
