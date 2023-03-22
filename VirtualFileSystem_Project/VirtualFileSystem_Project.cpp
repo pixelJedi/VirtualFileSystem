@@ -9,59 +9,51 @@
 using namespace std;
 
 void run_test1(VFS* vfs);
+void measure_time(void(*test)(VFS*), VFS* v);
 
 int main()
-{	
-	// Testing VFS
-
-	string str = "sdfs";
-	str.resize(50);
-	
-	string disk = "test.tfs";
-	size_t size = 1024 * 1024;	// 1 Mb
-	std::cout << "Testing file: " << disk << ", size: " << size << endl;
-
+{
 	VFS* vfs = new VFS();
+	string diskname = "test.tfs";
+	std::cout << "Testing file: " << diskname << endl;
 
-	/*
-Сделать такой тест (однопоточный):
-1. Открыть 2 файла на запись, 1 на чтение (заранее предсоздать).
-2. Писать по очереди несколько раз в 2 файла данные размером больше чем Block
-3. Закрыть все 3 файла.
-4. Убедиться, что записалось все правильно. 
-	*/
-
-	std::cout << "---Mount-----------------------------------------\n";
-	try	{ 
-		vfs->MountOrCreate(disk);	
+	try	
+	{ 
+		std::cout << "---Mount-----------------------------------------\n";
+		vfs->MountOrCreate(diskname);
 	} catch (std::invalid_argument& e)
 	{
-		// todo: rewrite without exeptions, may overflow the stack
 		std::cout << e.what();
-		vfs->MountOrCreate(disk);
 	}
-	try	{
-		run_test1(vfs);
-	}
-	catch (runtime_error& e)
+
+	try	
+	{
+		measure_time(run_test1, vfs);
+	} catch (runtime_error& e)
 	{
 		std::cout << e.what() << endl;
 	}
-	vfs->Unmount(disk);
-	delete vfs;
 
-	// Measuring time:
-	//clock_t tStart = clock();
-	//printf("Time taken: %.2fs\n", (double)(clock() - tStart) / CLOCKS_PER_SEC);
+	std::cout << "---Unmount---------------------------------------\n";
+	vfs->Unmount(diskname);
+
+	delete vfs;
 }
 
 void run_test1(VFS* vfs)
 {
-	// Each name within the path should be less than NODENAME
+	/* (One thread)
+	/ 1. Открыть 2 файла на запись, 1 на чтение (заранее предсоздать).
+	/ 2. Писать по очереди несколько раз в 2 файла данные размером больше чем Block
+	/ 3. Закрыть все 3 файла.
+	/ 4. Убедиться, что записалось все правильно.
+	*/
+
+	// Each name within the path should be less than NODENAME - validation not yet implemented
 	char f1[]{ "bin\\file" };
 	char f2[]{ "bin\\goal\\abel" };
 	char f3[]{ "alpha" };
-	char test1[]{
+	char test1[]{	// 2000 bytes
 "Lorem ipsum dolor sit amet, consectetur adipiscing elit. Nulla semper tristique mauris, at tristique\
  urna accumsan sed. Curabitur ac facilisis justo, non hendrerit urna. Mauris porttitor ex eget rhonc\
 us ultricies. Suspendisse et ornare diam. Integer convallis ex vitae elementum scelerisque. Pellente\
@@ -84,7 +76,7 @@ la id nisl vitae velit mollis elementum. Aenean vestibulum ullamcorper eros, nec
 Ut vel accumsan turpis. Phasellus varius fringilla justo, euismod malesuada sem sagittis et. Nulla l\
 igula erat, finibus ac lorem ac, porttitor commodo sapien. Nunc aliquam odio vel eros maximus, non m\
 ollis tellus ultrices. Sed congue finibus pretium proin." };
-	char test2[]{
+	char test2[]{	// 2139 bytes
 "What was he supposed to do here? Never get angry? He wasn't sure he could have done anything without\
  being angry and who knows what would have happened to Neville and his books then. Besides, Harry ha\
 d read enough fantasy books to know how this one went. He would try to suppress the anger and he wou\
@@ -111,7 +103,7 @@ two mystery novels, too.\
 A sheet of paper flew over his head, as if someone had thrown it from behind him - Harry turned arou\
 nd, but there was no one there - and when Harry turned forwards again, the note was settling to the \
 floor." };
-	char test3[]{
+	char test3[]{	// 16300 bytes
 "0101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101\
 0101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101\
 0101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101\
@@ -280,20 +272,30 @@ floor." };
 	File* file_w1 = vfs->Create(f1);
 	File* file_w2 = vfs->Create(f2);
 	File* file_r = vfs->Open(f3);
-	/*File* file_r = vfs->Create(f3);
-	vfs->Write(file_r, test1, strlen(test1));*/
+	std::cout << "---Print-Tree------------------------------------\n";
+	vfs->PrintAll();
 	std::cout << "---Write-----------------------------------------\n";
-	cout << vfs->Write(file_w1, test1, strlen(test1)) << " bytes wrote into file: " << file_w1->GetName() << endl;
-	cout << vfs->Write(file_w2, test2, strlen(test2)) << " bytes wrote into file: " << file_w2->GetName() << endl;
-	cout << vfs->Write(file_w1, test2, strlen(test2)) << " bytes wrote into file: " << file_w1->GetName() << endl;
-	cout << vfs->Write(file_w2, test1, strlen(test1)) << " bytes wrote into file: " << file_w2->GetName() << endl;
+	cout << vfs->Write(file_w2, test3, strlen(test3)) << "/" << strlen(test3) << " bytes wrote" << endl;
+	cout << vfs->Write(file_w1, test1, strlen(test1)) << "/" << strlen(test1) << " bytes wrote" << endl;
+	cout << vfs->Write(file_w2, test2, strlen(test2)) << "/" << strlen(test2) << " bytes wrote" << endl;
+	cout << vfs->Write(file_w1, test2, strlen(test2)) << "/" << strlen(test2) << " bytes wrote" << endl;
+	cout << vfs->Write(file_w2, test1, strlen(test1)) << "/" << strlen(test1) << " bytes wrote" << endl;
 	std::cout << "---Read------------------------------------------\n";
-	int pos = 3000;
-	char* buff = new char[pos];
-	cout << vfs->Read(file_r, buff, pos) << " bytes read from file: " << file_r->GetName() << endl;/**/
+	int size = 3000;
+	char* buff = new char[size];
+	cout << vfs->Read(file_r, buff, size) << "/" << size << " bytes read" << endl;/**/
 	std::cout << "---Close-----------------------------------------\n";
 	vfs->Close(file_w1);
 	vfs->Close(file_w2);
 	vfs->Close(file_r);
-	std::cout << "---Unmount---------------------------------------\n";
+}
+
+void measure_time(void(*test)(VFS*), VFS* v)
+{
+	clock_t tStart, tFin;
+	printf(">> Time measuring started!\n");
+	tStart = clock();
+	test(v);
+	tFin = clock();
+	printf(">> Time taken: %.2fs\n", (double)(tFin - tStart) / CLOCKS_PER_SEC);
 }

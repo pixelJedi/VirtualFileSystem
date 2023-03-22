@@ -86,6 +86,7 @@ template <typename T> uint32_t Vertice<T>::Count()
 template <typename T> void Vertice<T>::BindNewTreeToChild(const std::string& name, Vertice<T>* nodePtr, bool deleteData)
 {
 	if (deleteData) _children[name].second->Destroy();
+	_children[name].first = nullptr;
 	_children[name].second = nodePtr;
 }
 
@@ -99,7 +100,7 @@ template <typename T> std::string Vertice<T>::PrintVerticeTree(uint32_t count)
 			for (uint32_t i = 0; i != count; ++i) info << "  ";
 			info << (*iter).first << " ";
 			if ((*iter).second.first) info << *((*iter).second.first);
-			else info << "-";
+			else info << "X";
 			info << "\n";
 			if ((*iter).second.second) info << (*iter).second.second->PrintVerticeTree(count + 1);
 		}

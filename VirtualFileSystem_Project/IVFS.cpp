@@ -336,8 +336,6 @@ uint32_t VDisk::TakeNode(uint32_t size)
 }
 void VDisk::UpdateBlockCounters(uint32_t count)
 {
-	std::lock_guard<std::mutex> lockblock(blockReserve);
-	std::lock_guard<std::mutex> lockbode(freeNodeReserve);
 	nextFreeBlock+= count;
 	freeBlocks-=count;
 }
@@ -464,9 +462,7 @@ std::string VDisk::PrintSpaceLeft() const
 
 void VDisk::PrintTree()
 {
-	std::cout << "-------------------------------------------\n";
 	std::cout << root->PrintVerticeTree();
-	std::cout << "-------------------------------------------\n";
 }
 
 /// <summary>
@@ -704,23 +700,27 @@ bool VFS::Unmount(const std::string& diskName)
 }
 VDisk* VFS::GetMostFreeDisk()
 {
-	std::lock_guard<std::mutex> lock(diskSelection);
-	if (!disks.size()) return nullptr;
+	// todo: unsafe; the function doesn't check for full paths whcih may or may not require more than 1 node
 	VDisk* chosenDisk = nullptr;
-	uint32_t max_blocks = 0;
-	for (const auto& disk : disks)
+	if (disks.size())
 	{
-		uint32_t cur_nodes = disk->GetNodesLeft();
-		uint32_t cur_blocks = disk->GetBlocksLeft();
-		if (!cur_nodes || !cur_blocks) continue;
-		if (disk->GetBlocksLeft() > max_blocks)
+		uint32_t max_blocks = 0;
+		std::lock_guard<std::mutex> lock(diskSelection);
+		for (const auto& disk : disks)
 		{
-			max_blocks = disk->GetBlocksLeft();
-			chosenDisk = disk;
+			uint32_t cur_nodes = disk->GetNodesLeft();
+			uint32_t cur_blocks = disk->GetBlocksLeft();
+			if (!cur_nodes || !cur_blocks) continue;
+			if (disk->GetBlocksLeft() > max_blocks)
+			{
+				max_blocks = disk->GetBlocksLeft();
+				chosenDisk = disk;
+			}
 		}
 	}
 	return chosenDisk;
 }
+
 std::vector<VDisk*>::iterator VFS::GetDisk(std::string name)
 {
 	for (auto iter = disks.begin(); iter != disks.end(); ++iter)
@@ -746,7 +746,7 @@ File* VFS::Open(const char* name)
 		if (file && !(file->IsWriteMode()) && file->GetReaders() < file->MAX_READERS)
 		{
 			file->AddReader();
-			std::cout << "successful" << name << std::endl;
+			std::cout << "opened" << std::endl;
 			return file;
 		}
 	}
@@ -759,9 +759,9 @@ File* VFS::Open(const char* name)
 /// <returns>nullptr if the file is already open.</returns>
 File* VFS::Create(const char* name)
 {
+	std::cout << "* Trying to open " << name << " (write mode) -> ";
 	if (disks.empty()) throw std::out_of_range("No disks mounted");
 
-	std::cout << "* Trying to open " << name << " (write mode) -> ";
 	File* file = nullptr;
 
 	// Searching for an existing file
@@ -781,9 +781,9 @@ File* VFS::Create(const char* name)
 			file = mostFreeDisk->CreateFile(name);
 
 			if (file) std::cout << "created -> ";
-			else std::cout << "failed to create" << std::endl;
+			else std::cout << "failed to create\n";
 		}
-		else std::cout << "no space left" << std::endl;
+		else std::cout << "no space left\n";
 	}
 	else std::cout << "file found -> ";
 
@@ -794,10 +794,10 @@ File* VFS::Create(const char* name)
 		if (!(file->IsBusy()))
 		{
 			file->FlipWriteMode();
-			std::cout << "opened" << std::endl;
+			std::cout << "opened\n";
 		}
 		else
-			std::cout << "is already busy" << std::endl;
+			std::cout << "is already busy\n";
 	}
 
 	return file;
@@ -830,19 +830,28 @@ size_t VFS::Write(File* f, char* buff, size_t len)
 }
 void VFS::Close(File* f)
 {
-	std::cout << "* Closing file: " << f->GetName() << std::endl;
+	std::cout << "* Closing file: " << f->GetName() << " -> ";
 	if (f->IsBusy())
 	{
 		if (f->IsWriteMode())
 		{
 			f->FlipWriteMode();
-			std::cout << "File \"" << f->GetName() << "\": writing closed\n";
+			std::cout << "writing closed\n";
 		}
 		else
 		{
 			f->RemoveReader();
-			std::cout << "File \"" << f->GetName() << "\": "<< f->GetReaders() <<" readers remain\n";
+			std::cout << f->GetReaders() <<" readers remain\n";
 		}
+	}
+}
+
+void VFS::PrintAll()
+{
+	for (auto iter = disks.begin(); iter != disks.end(); ++iter)
+	{
+		std::cout << "Disk [" << (*iter)->GetName() << "]" << std::endl;
+		(*iter)->PrintTree();
 	}
 }
 
@@ -981,7 +990,7 @@ char* DirToChar(uint32_t nodecode, std::string name, uint32_t firstchild)
 	return newNode;
 }
 
-uint32_t CountNodes(const std::string path)
+uint32_t CountNodes(const std::string_view path)
 {
 	uint32_t count = 1;
 	for (uint32_t i = 0; i < path.size(); i++)

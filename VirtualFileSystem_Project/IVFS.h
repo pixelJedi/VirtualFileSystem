@@ -240,6 +240,8 @@ public:
 	size_t Write(File* f, char* buff, size_t len) override;
 	void Close(File* f) override;
 
+	void PrintAll();
+
 	VFS();
 	~VFS();
 };
@@ -257,4 +259,4 @@ char* DirToChar(uint32_t nodecode, std::string name, uint32_t firstchild);
 uint64_t GetDiskSize(std::string filename);	
 
 void TreeToPlain(std::vector<char*>& info, Vertice<File*>& tree, uint32_t& nodecode);
-uint32_t CountNodes(const std::string path); // todo: use Path class for all path operations
+uint32_t CountNodes(const std::string_view path); // todo: use Path class for all path operations
