@@ -36,8 +36,19 @@ uint32_t File::EstimateBlocksNeeded(size_t dataLength) const
 	long long difference = dataLength - GetRemainingSize();
 	return difference > 0 ? uint32_t(std::ceil(difference * 1.0 / BLOCK)) : 0;
 }
+short File::STBCapacity()
+{
+	return BLOCK / ADDR - 1;
+}
+/// <returns>Remaining capacity of the active (last) TB</returns>
+uint32_t File::CountSlotsInTB() const
+{
+	short sTBCap = STBCapacity();
+	short remCap = sTBCap - (blocks.size() + TBDIFF) % sTBCap;
+	return remCap == sTBCap ? 0 : remCap;
+}
 
-std::string File::ParseLast(std::string path, char delim)
+std::string File::ParseLast(std::string path, char delim) const
 {
 	auto pos = path.find_last_of(delim);
 	return pos < path.length() ? std::string{ path.substr(pos + 1, path.length()) } : path;
@@ -71,12 +82,6 @@ File::File(uint32_t blockAddr, std::string name, std::string fathername, bool ad
 	_writemode = false;
 	_readmode_count = 0;
 	_lastTB = _mainTB = blockAddr;
-
-	if (addCluster)
-	{
-		for(int i = 1;i<CLUSTER; ++i)
-			blocks.push_back(blockAddr+i);
-	}
 }
 
 /* ---BinDisk--------------------------------------------------------------- */
@@ -325,7 +330,7 @@ char* VDisk::ReadInfo(Sect info, uint32_t i)
 /// <summary>
 /// Checks for node availability and updates FreeNodes counter
 /// </summary>
-/// <returns>The node code</returns>
+/// <returns>The first free node id</returns>
 uint32_t VDisk::TakeNode(uint32_t size)
 {
 	std::lock_guard<std::mutex> lock(nodeReserve);
@@ -340,21 +345,6 @@ void VDisk::UpdateBlockCounters(uint32_t count)
 	freeBlocks-=count;
 }
 /// <summary>
-/// Checks for blocks availability and updates FreeBlocks counter
-/// </summary>
-/// <returns>Address of the first allocated block</returns>
-uint32_t VDisk::ReserveCluster()
-{
-	std::lock_guard<std::mutex> lockblock(blockReserve);
-	std::lock_guard<std::mutex> lockbode(freeNodeReserve);
-	if (!freeBlocks) throw std::logic_error("Failed to get a free block");
-	uint32_t curFree = nextFreeBlock;	
-// todo: allow to 1) allocate less than a cluster, and 2) non-neighbour blocks, 3) implement proper tracking of busy block, e.g. through bitmap
-	nextFreeBlock = (nextFreeBlock + CLUSTER) > maxBlock ? throw std::logic_error("Failed to get a full cluster") : nextFreeBlock + CLUSTER;
-	freeBlocks -= CLUSTER;
-	return curFree;
-}
-/// <summary>
 /// Adds one data block for the file.
 /// Node that more then one may be actually reserved.
 /// </summary>
@@ -363,13 +353,49 @@ void VDisk::TakeFreeBlock(File* f)
 	std::lock_guard<std::mutex> lock(blockReserve);
 	if (!freeBlocks) throw std::logic_error("Failed to get a free block");
 	f->AddDataBlock(nextFreeBlock);
-	UpdateBlockCounters(1);
-	if (NoSlotsInTB(f))
+	UpdateBlockCounters();
+	if (f->CountSlotsInTB() == 0)
 	{
 		if (!freeBlocks) throw std::logic_error("Failed to get a new title block");
 		InitTB(f, nextFreeBlock + 1);
-		UpdateBlockCounters(1);
+		UpdateBlockCounters();
 	}
+}
+/// <summary>
+/// Tries to add as many Data Blocks for File f, as specified.
+/// </summary>
+/// <returns>The number of blocks really allocated</returns>
+uint32_t VDisk::RequestDBlocks(File* f, uint32_t number)
+{
+	uint32_t firstfree, maxTB = 0, maxDB = 0;
+	std::lock_guard<std::mutex> lock(blockReserve);
+	maxTB = (std::min(number, freeBlocks) - std::min(std::min(f->CountSlotsInTB(), number), freeBlocks)) / File::STBCapacity();
+	maxDB = std::min(std::min(number, freeBlocks - maxTB), f->CountSlotsInTB() + maxTB * (File::STBCapacity() + 1));
+	if (number > maxDB && freeBlocks - maxDB - maxTB > 1) { ++maxTB; maxDB += std::min(freeBlocks - maxDB - maxTB, number - maxDB); }
+	if (maxDB) firstfree = nextFreeBlock;
+	UpdateBlockCounters(maxDB);
+	for (int i = 0; i < maxDB; ++i) f->AddDataBlock(firstfree + i);
+	for (int i = 0; i < maxTB; ++i) AppendTB(f, RequestTB());
+	return maxDB;
+}
+/// <summary>
+/// Allocates one free block
+/// </summary>
+/// <returns>The id of the block </returns>
+uint32_t VDisk::RequestTB()
+{
+	std::lock_guard<std::mutex> lock(blockReserve);
+	if (!freeBlocks) throw std::runtime_error("Failed to get a free block");
+	uint32_t firstfree = nextFreeBlock;
+	UpdateBlockCounters();
+	return nextFreeBlock;
+}
+
+void VDisk::AppendTB(File* file, uint32_t addr)
+{
+	disk.SetBytes(addrMap[Sect::s_blocks] + file->GetLastTB() * BLOCK + addrMap[Sect::fd_nextTB], IntToChar(addr), ADDR);
+	file->SetLastTB(addr);
+	disk.SetBytes(addrMap[Sect::s_blocks] + addr * BLOCK + addrMap[Sect::fd_nextTB], IntToChar(addr), ADDR);
 }
 
 bool VDisk::IsNodeEmpty(short index)
@@ -391,19 +417,14 @@ uint32_t VDisk::GetNodeChild(short index)
 /// <summary>
 /// Initializes TB by writing file data to the VDisk
 /// </summary>
+/// TO REWORK
 void VDisk::InitTB(File* file, uint32_t newTBAddr)
 {
-	disk.SetBytes(addrMap[Sect::s_blocks] + file->GetLastTB() * BLOCK + addrMap[Sect::fd_nextTB], IntToChar(newTBAddr), ADDR);
-	file->SetLastTB(newTBAddr);
-	disk.SetBytes(addrMap[Sect::s_blocks] + newTBAddr * BLOCK + addrMap[Sect::fd_nextTB], IntToChar(newTBAddr), ADDR);
-	if (file->GetMainTB() == newTBAddr)
-	{
-		disk.SetBytes(addrMap[Sect::s_blocks] + newTBAddr * BLOCK + addrMap[Sect::fd_realSize], IntToChar(file->GetSize()), 2 * ADDR);
-	}
-
+	AppendTB(file, newTBAddr);
 	uint64_t totalBlocks = file->CountDataBlocks();
 	if (file->GetMainTB() == newTBAddr)
 	{
+		disk.SetBytes(addrMap[Sect::s_blocks] + newTBAddr * BLOCK + addrMap[Sect::fd_realSize], IntToChar(file->GetSize()), 2 * ADDR);
 		for (int i = 0; i < totalBlocks; ++i)
 			disk.SetBytes(addrMap[Sect::s_blocks] + newTBAddr * BLOCK + addrMap[Sect::fd_firstDB] + i * ADDR, IntToChar(file->GetDataBlock(i)), ADDR);
 	}
@@ -481,12 +502,7 @@ File* VDisk::SeekFile(const char* path) const
 		return nullptr;
 	}
 }
-/// <returns>True, when it's time to allocate a new TB</returns>
-bool VDisk::NoSlotsInTB(File* f)
-{
-	// "2" is the difference between MainTB and SecondaryTB tech data length in bytes
-	return (f->CountDataBlocks() + 2) % BLOCK == 0;
-}
+
 /// <summary>
 /// Loads File struct's blocks, size and TB addresses from the binary data
 /// </summary>
@@ -500,7 +516,7 @@ void VDisk::LoadFile(File* f)
 		size_t pos = std::get<0>(GetPosLen(Sect::fd_s_firstDB, last));
 		for (short i = 0; i != BLOCK/ADDR-1; ++i)	// == within same Title Block
 		{
-			if (main == last && i < 2) continue;	// Skip difference between Main and Secondary TBs
+			if (main == last && i < TBDIFF) continue;
 
 			rawaddr = new char[ADDR];
 			disk.GetBytes(pos + i*ADDR, rawaddr, ADDR);
@@ -529,7 +545,8 @@ File* VDisk::CreateFile(const char* path)
 	try
 	{
 		TakeNode(CountNodes(path));
-		File* f = new File(ReserveCluster(), path, this->name);
+		File* f = new File(RequestTB(), path, this->name);
+		RequestDBlocks(f, CLUSTER-1);
 
 		std::lock_guard<std::mutex> lock(tree);
 		root->Add(path, f);

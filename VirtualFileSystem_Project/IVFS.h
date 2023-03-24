@@ -19,6 +19,8 @@
 #define NODEDATA	64							// Reserved per node, bytes
 #define NODEMETA	1							// Reserved per node metadata, bytes
 #define NODENAME	NODEDATA-2*ADDR-NODEMETA	// Reserved per node name, bytes
+#define TBDIFF		2				// Difference between main and secondary TB, ADDR
+
 // todo: think of better const handling
 
 /* ---File------------------------------------------------------------------ */
@@ -48,11 +50,11 @@ public:
 
 	// Getters
 
-	std::string GetName() { return _name; };
-	std::string GetFather() { return _fathername; };
-	bool IsBusy() { return _writemode || _readmode_count; };
-	bool IsWriteMode() { return _writemode; };
-	short GetReaders() { return _readmode_count; };
+	std::string GetName() const { return _name; };
+	std::string GetFather() const { return _fathername; };
+	bool IsBusy() const { return _writemode || _readmode_count; };
+	bool IsWriteMode() const { return _writemode; };
+	short GetReaders() const { return _readmode_count; };
 	uint32_t GetMainTB() const { return _mainTB; };
 	uint32_t GetLastTB() const { return _lastTB; };
 	uint64_t GetSize() const { return _realSize; };
@@ -61,8 +63,10 @@ public:
 	uint32_t GetCurDataBlock() const { return uint32_t(blocks[_realSize / BLOCK]); };	// Addr of the last written DB
 	uint32_t GetDataBlock(uint32_t index) const { return blocks[index]; };				// Addr of the index-th DB
 	uint32_t GetLastDataBlock() const { return blocks.back(); };						// Addr of the last allocated DB
+	static short STBCapacity();
+	uint32_t CountSlotsInTB() const;
 	uint32_t Fseekp() const { return uint32_t(_realSize % BLOCK); };					// Number of the first empty byte from the last block's beginning
-	size_t GetRemainingSize() const { return CountDataBlocks()* BLOCK - _realSize; };
+	size_t GetRemainingSize() const { return CountDataBlocks()* BLOCK - _realSize; };	// Remaining size
 
 	// Setters
 
@@ -75,7 +79,7 @@ public:
 	// Other
 
 	uint32_t EstimateBlocksNeeded(size_t dataLength) const;
-	std::string ParseLast(std::string path, char delim = '\\');
+	std::string ParseLast(std::string path, char delim = '\\') const;
 	char* NodeToChar(uint32_t nodeCode);
 	void AddDataBlock(uint32_t datablock) { blocks.push_back(datablock); };
 	friend std::ostream& operator<<(std::ostream& s, const File& node);
@@ -161,12 +165,13 @@ private:
 	uint32_t EstimateBlockCapacity(size_t size) const;
 	uint64_t EstimateMaxSize(uint64_t size) const;		// User's size is truncated so that all blocks are of BLOCK size
 	
-	void UpdateBlockCounters(uint32_t count = 0);
-	uint32_t ReserveCluster();							// Reserve CLUSTER of blocks
+	void UpdateBlockCounters(uint32_t count = 1);
 	void TakeFreeBlock(File* f);						// Allocate 1 datablock + TB if needed
-	bool NoSlotsInTB(File* f);							// Check remaining spaces in the last TB
+	uint32_t RequestDBlocks(File* f, uint32_t number); 	// Try to allocate [number] of blocks for [f]
+	uint32_t RequestTB();
+	void AppendTB(File* f, uint32_t addr);
 	bool ExpandIfLT(File* f, size_t len);				// Allocate blocks to fit [len] bytes 
-	void InitTB(File* file, uint32_t newAddr);
+	void InitTB(File* f, uint32_t newAddr);
 	
 	std::tuple<uint32_t, uint32_t> GetPosLen(Sect info, uint32_t offset);	// Converts section offsets to an absolute data position
 	char* ReadInfo(Sect info, uint32_t i = 0);			// Get raw data from a specific Section
