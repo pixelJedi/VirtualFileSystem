@@ -11,7 +11,7 @@
 
 std::ostream& operator<<(std::ostream& s, const File& node)
 {
-	return s << node._name;
+	return s << "[" << node._mainTB << "] "<< node.CountDataBlocks() << " dblocks, " << node._realSize << " bytes" ;
 }
 
 char File::BuildFileMeta()
@@ -250,8 +250,12 @@ void VDisk::UpdateTBs(File* f)
 	while (true)
 	{
 		uint32_t count = std::min(totalBlocks-i,uint32_t(File::STBCapacity()));
-		pos = std::get<0>(GetPosLen(Sect::fd_firstDB, cur));
-		if (cur == f->GetMainTB()) { pos += TBDIFF * ADDR; count -= TBDIFF; }
+		pos = std::get<0>(GetPosLen(Sect::fd_s_firstDB, cur));
+		if (cur == f->GetMainTB()) 
+		{ 
+			pos += TBDIFF * ADDR; 
+			if (count == File::STBCapacity()) count -= TBDIFF;
+		}
 
 		for (j = 0; j < count; ++j)
 			disk.SetBytes(pos + j * ADDR, IntToChar(f->GetDataBlock(i+j)), ADDR);
@@ -445,7 +449,11 @@ void VDisk::FillTBs(File* file, uint32_t newTBAddr)
 bool VDisk::ExpandIfLT(File* f, size_t len)
 {
 	if (f->GetRemainingSize() < len)
-		return RequestDBlocks(f, f->EstimateBlocksNeeded(len)) != 0;
+	{
+		bool changed = RequestDBlocks(f, f->EstimateBlocksNeeded(len)) != 0;
+		UpdateTBs(f);
+		return changed;
+	}
 	return false;
 }
 
@@ -460,23 +468,21 @@ Free dataspace:	{x} of {x} bytes ({x.xx}%)
 */
 std::ostream& operator<<(std::ostream& s, const VDisk& disk)
 {
+	const short ALIGN = 9;
+	const std::string SEP = " of ";
 	size_t freeSpace = disk.freeBlocks * BLOCK;
-
 	s.precision(2);
 	s << std::fixed;
-	s << "-------------------------------------------\n";
+	s << "*************************************************\n";
 	s << "VDisk \"" << disk.name << "\" usage:\n";
-	s << "Nodes used: \t" << (disk.maxNode- disk.freeNodes) << " of " << disk.maxNode << " (" << ((disk.maxNode - disk.freeNodes) * 1.0 / disk.maxNode) * 100 << "%)\n";
-	s << "Blocks used:\t" << (disk.maxBlock- disk.freeBlocks) << " of " << disk.maxBlock << " (" << ((disk.maxBlock - disk.freeBlocks) * 1.0 / disk.maxBlock) * 100 << "%)\n\n";
-	s << "Free dataspace:\t" << freeSpace << " of " << disk.sizeInBytes << " bytes (" << ((freeSpace * 1.0) / disk.sizeInBytes) * 100 << "%)\n";
-	s << "-------------------------------------------\n";
+	s << " Free space  :\t" << Aligned(freeSpace, ALIGN) << SEP << disk.sizeInBytes << " bytes (" << ((freeSpace * 1.0) / disk.sizeInBytes) * 100 << "%)\n";
+	s << " Nodes used  :\t" << Aligned(disk.maxNode - disk.freeNodes, ALIGN) << SEP << disk.maxNode << " (" << ((disk.maxNode - disk.freeNodes) * 1.0 / disk.maxNode) * 100 << "%)\n";
+	s << " Blocks used :\t" << Aligned(disk.maxBlock - disk.freeBlocks, ALIGN) << SEP << disk.maxBlock << " (" << ((disk.maxBlock - disk.freeBlocks) * 1.0 / disk.maxBlock) * 100 << "%)\n";
+	s << "------->               Tree              <-------\n";
+	s << disk.root->PrintVerticeTree(true);
+	s << "*************************************************\n";
 
 	return s;
-}
-
-void VDisk::PrintTree()
-{
-	std::cout << root->PrintVerticeTree();
 }
 
 /// <summary>
@@ -827,11 +833,11 @@ File* VFS::Create(const char* name)
 /// <returns>Number of bytes actually read</returns>
 size_t VFS::Read(File* f, char* buff, size_t len)
 {
+	std::cout << "* Reading file: " << f->GetName() << std::endl;
 	if (f->IsWriteMode()) {
 		std::cout << "File is open in writemode" << std::endl;
 		return 0;
 	}
-	std::cout << "* Reading file: " << f->GetName() << std::endl;
 	VDisk* vd = (*GetDisk(f->GetFather()));
 	if (!vd) throw std::runtime_error("No disk found for the file");
 	return vd->ReadFromFile(f, buff, len);
@@ -869,8 +875,8 @@ void VFS::PrintAll()
 {
 	for (auto iter = disks.begin(); iter != disks.end(); ++iter)
 	{
-		std::cout << "Disk [" << (*iter)->GetName() << "]" << std::endl;
-		(*iter)->PrintTree();
+		std::cout << "VDisk: " << (*iter)->GetName() << std::endl;
+		std::cout << *(*iter);
 	}
 }
 
@@ -920,7 +926,6 @@ uint32_t CharToInt32(const char* bytes)
 }
 uint64_t CharToInt64(const char* bytes)
 {
-	// todo: make template
 	const int mask = 0xFF;
 	uint64_t data = 0;
 
@@ -1007,4 +1012,14 @@ char* DirToChar(uint32_t nodecode, std::string name, uint32_t firstchild)
 	for (i = 0; i < ADDR; ++i, ++ibyte)
 		newNode[ibyte] = IntToChar(firstchild)[i];
 	return newNode;
+}
+
+std::string Aligned(size_t number, short length)
+{
+	std::ostringstream s;
+	size_t t = number;
+	short count = 1;
+	while (t /= 10) ++count;
+	s << std::string(length>=count?length-count:0,' ') << number;
+	return s.str();
 }

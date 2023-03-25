@@ -199,8 +199,6 @@ public:
 	size_t WriteInFile(File* f, char* buff, size_t len);
 	size_t ReadFromFile(File* f, char* buff, size_t len);
 
-	void PrintTree();
-
 	VDisk() = delete;
 	VDisk(const std::string fileName);						// Open existing VDisk
 	VDisk(const std::string fileName, const uint64_t size);	// Create new VDisk
@@ -208,7 +206,6 @@ public:
 
 	friend std::ostream& operator<<(std::ostream& s, const VDisk& disk);
 };
-std::ostream& operator<<(std::ostream& s, const VDisk& disk);
 
 /* ---VFS------------------------------------------------------------------- */
 
@@ -269,3 +266,5 @@ char* DirToChar(uint32_t nodecode, std::string name, uint32_t firstchild);
 uint64_t GetDiskSize(std::string filename);	
 
 void TreeToPlain(std::vector<char*>& info, Vertice<File*>& tree, uint32_t& nodecode);
+
+std::string Aligned(size_t number, short length);

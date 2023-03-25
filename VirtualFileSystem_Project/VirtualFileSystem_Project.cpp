@@ -28,11 +28,14 @@ int main()
 
 	try	
 	{
-		measure_time(run_test1, vfs);
+		//measure_time(run_test1, vfs);
 	} catch (runtime_error& e)
 	{
 		std::cout << e.what() << endl;
 	}
+
+	std::cout << "---Print-Tree------------------------------------\n";
+	vfs->PrintAll();
 
 	std::cout << "---Unmount---------------------------------------\n";
 	vfs->Unmount(diskname);
@@ -48,7 +51,7 @@ void run_test1(VFS* vfs)
 	/ 3. Закрыть все 3 файла.
 	/ 4. Убедиться, что записалось все правильно.
 	*/
-	bool init_f3 = true;
+	bool init_f3 = false;
 	// Each name within the path should be less than NODENAME - validation not yet implemented
 	char f1[]{ "bin\\file" };
 	char f2[]{ "bin\\goal\\abel" };
@@ -270,19 +273,17 @@ floor." };
 	};
 	std::cout << "---Create----------------------------------------\n";
 	File* file_w1 = vfs->Create(f1);
-	File* file_w2 = vfs->Create(f2);
+	File* file_w2 = vfs->Create(f3);
 	File* file_r;
 	if (init_f3)
 	{
 		file_r = vfs->Create(f3);
-		vfs->Write(file_w1, test2, strlen(test2));
-		vfs->Write(file_w2, test1, strlen(test1));
 		vfs->Write(file_r, test2, strlen(test2));
 		vfs->Close(file_r);
+		vfs->Write(file_w1, test2, strlen(test2));
+		vfs->Write(file_w2, test1, strlen(test1));
 	}
-	file_r = vfs->Open(f3);
-	std::cout << "---Print-Tree------------------------------------\n";
-	vfs->PrintAll();
+	file_r = vfs->Open(f2);
 	std::cout << "---Write-----------------------------------------\n";
 	cout << vfs->Write(file_w2, test3, strlen(test3)) << "/" << strlen(test3) << " bytes wrote" << endl;
 	cout << vfs->Write(file_w1, test1, strlen(test1)) << "/" << strlen(test1) << " bytes wrote" << endl;
@@ -302,9 +303,9 @@ floor." };
 void measure_time(void(*test)(VFS*), VFS* v)
 {
 	clock_t tStart, tFin;
-	printf(">> Time measuring started!\n");
+	printf("\n>> Time measuring started!\n");
 	tStart = clock();
 	test(v);
 	tFin = clock();
-	printf(">> Time taken: %.2fs\n", (double)(tFin - tStart) / CLOCKS_PER_SEC);
+	printf(">> Time taken: %.2fs\n\n", (double)(tFin - tStart) / CLOCKS_PER_SEC);
 }

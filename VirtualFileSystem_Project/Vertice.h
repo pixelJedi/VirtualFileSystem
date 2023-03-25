@@ -20,7 +20,7 @@ public:
 	T GetData(std::string_view path);
 	uint32_t Count();
 
-	std::string PrintVerticeTree(uint32_t count = 0);
+	std::string PrintVerticeTree(bool unpack = false, uint32_t count = 0);
 	friend void TreeToPlain(std::vector<char*>& info, Vertice<T>& tree, uint32_t& nodecode);
 };
 
@@ -90,7 +90,7 @@ template <typename T> void Vertice<T>::BindNewTreeToChild(const std::string& nam
 	_children[name].second = nodePtr;
 }
 
-template <typename T> std::string Vertice<T>::PrintVerticeTree(uint32_t count)
+template <typename T> std::string Vertice<T>::PrintVerticeTree(bool unpack, uint32_t count)
 {
 	std::ostringstream info;
 	if (!_children.empty())
@@ -99,10 +99,14 @@ template <typename T> std::string Vertice<T>::PrintVerticeTree(uint32_t count)
 		{
 			for (uint32_t i = 0; i != count; ++i) info << "  ";
 			info << (*iter).first << " ";
-			if ((*iter).second.first) info << *((*iter).second.first);
+			if ((*iter).second.first)
+			{
+				if (unpack) info << *(*((*iter).second.first));
+				else info << *((*iter).second.first);
+			}
 			else info << "X";
 			info << "\n";
-			if ((*iter).second.second) info << (*iter).second.second->PrintVerticeTree(count + 1);
+			if ((*iter).second.second) info << (*iter).second.second->PrintVerticeTree(unpack, count + 1);
 		}
 	}
 	return info.str();
