@@ -59,7 +59,7 @@ public:
 	uint32_t GetLastTB() const { return _lastTB; };
 	uint64_t GetSize() const { return _realSize; };
 
-	uint32_t CountDataBlocks() const { return blocks.size(); };	
+	uint32_t CountDataBlocks() const { return uint32_t(blocks.size()); };
 	uint32_t GetCurDataBlock() const { return uint32_t(blocks[_realSize / BLOCK]); };	// Addr of the last written DB
 	uint32_t GetDataBlock(uint32_t index) const { return blocks[index]; };				// Addr of the index-th DB
 	uint32_t GetLastDataBlock() const { return blocks.back(); };						// Addr of the last allocated DB
@@ -74,7 +74,7 @@ public:
 	void AddReader();
 	void RemoveReader();
 	void SetLastTB(uint32_t addr) { _lastTB = addr; };
-	void IncreaseSize(uint32_t val) { _realSize += val; };
+	void IncreaseSize(uint64_t val) { _realSize += val; };
 
 	// Other
 
@@ -87,7 +87,7 @@ public:
 	// Class
 
 	File() = delete;
-	File(uint32_t blockAddr, std::string name, std::string fathername, bool addCluster = true);
+	File(uint32_t blockAddr, std::string name, std::string fathername);
 	~File() {};
 };
 std::ostream& operator<<(std::ostream& s, const File& node);
@@ -97,8 +97,8 @@ std::ostream& operator<<(std::ostream& s, const File& node);
 class BinDisk : std::fstream 
 {
 public:
-	bool SetBytes(uint32_t position, const char* data, uint32_t length);	// Low-level writing
-	bool GetBytes(uint32_t position, char* data, uint32_t length);			// Low-level reading
+	bool SetBytes(size_t position, const char* data, size_t length);	// Low-level writing
+	bool GetBytes(size_t position, char* data, size_t length);			// Low-level reading
 
 	void MakeZeroFile(size_t size);
 
@@ -116,8 +116,8 @@ public:
 class VDisk
 {
 private:
-	// Aliases for all key data sections
-	enum class Sect 
+	
+	enum class Sect		// Aliases for all key data sections
 	{ 
 		s_data,
 		s_nodes,
@@ -138,8 +138,7 @@ private:
 		fd_firstDB,		// Address of the first data block
 		fd_s_firstDB	// Address of the first data block in secondary TB
 	};
-	// Offsets for all key data sections in bytes
-	static std::map<Sect, uint32_t> addrMap;
+	static std::map<Sect, uint32_t> addrMap;	// Offsets for all key data sections in bytes
 
 	const std::string name;
 	const uint64_t sizeInBytes;		// Reserved size provided during creation
@@ -149,39 +148,45 @@ private:
 	uint32_t freeBlocks;
 	uint32_t nextFreeBlock;
 
+	std::mutex blockReserve, nodeReserve, freeNodeReserve, tree;
+
 	BinDisk disk;					// Main data in/out stream
 	Vertice<File*>* root;			// Hierarchy & search
 
-	std::mutex blockReserve, nodeReserve, freeNodeReserve;
-
-	Vertice<File*>* LoadHierarchy(uint32_t start_index = 0);	// Plain to tree
-	void WriteHierarchy();										// Tree to plain
-	void LoadFile(File* f);
-
-	bool InitDisk();									// Format new VDisk
-	bool UpdateDisk();									// Write data into the associated file
+	// Uses data in RAM
 
 	uint32_t EstimateNodeCapacity(size_t size) const;
 	uint32_t EstimateBlockCapacity(size_t size) const;
 	uint64_t EstimateMaxSize(uint64_t size) const;		// User's size is truncated so that all blocks are of BLOCK size
-	
-	void UpdateBlockCounters(uint32_t count = 1);
-	void TakeFreeBlock(File* f);						// Allocate 1 datablock + TB if needed
-	uint32_t RequestDBlocks(File* f, uint32_t number); 	// Try to allocate [number] of blocks for [f]
-	uint32_t RequestTB();
-	void AppendTB(File* f, uint32_t addr);
-	bool ExpandIfLT(File* f, size_t len);				// Allocate blocks to fit [len] bytes 
-	void InitTB(File* f, uint32_t newAddr);
-	
-	std::tuple<uint32_t, uint32_t> GetPosLen(Sect info, uint32_t offset);	// Converts section offsets to an absolute data position
-	char* ReadInfo(Sect info, uint32_t i = 0);			// Get raw data from a specific Section
-	
+	uint32_t EstimateNodes(const std::string_view path);	
 	uint32_t TakeNode(uint32_t size);					// Reserve one node
-	bool IsNodeEmpty(short index);
-	bool IsNodeFile(short index);
+	bool CanCreateFile(uint32_t nodes, uint32_t blocks = 2);
+	
+	uint32_t RequestDBlocks(File* f, uint32_t number); 	// Try to allocate [number] of blocks for [f]
+	uint32_t ReserveOneBlock();							// Reserves one block for delayed assignment to a file
+	bool ExpandIfLT(File* f, size_t len);				// Allocate blocks to fit [len] bytes 
+	void UpdateBlockCounters(uint32_t count = 1);
+
+	// Uses BinDisk data directly
+
+	bool InitDisk();									// Formats new BinDisk
+	void UpdateTBs(File* f);
+	void UpdateDisk();									// Refreshes data in the associated BinDisk
+
+	Vertice<File*>* LoadHierarchy(uint32_t start_index = 0);	// Plain to tree
+	void WriteHierarchy();										// Tree to plain
+
+	void LoadFile(File* f);
+
+	void AppendTB(File* f, uint32_t addr);
+	void FillTBs(File* f, uint32_t newAddr);
+
+	char* ReadInfo(Sect info, uint32_t i = 0);			// Get raw data from a specific Section
+	std::tuple<uint32_t, uint32_t> GetPosLen(Sect info, uint32_t offset);	// Converts section offsets to an absolute data position
+	
+	bool GetIsFile(short index);
 	uint32_t GetNodeCode(short index);
 	uint32_t GetNodeChild(short index);
-
 
 public:
 	std::string GetName() const { return name; };
@@ -194,16 +199,16 @@ public:
 	size_t WriteInFile(File* f, char* buff, size_t len);
 	size_t ReadFromFile(File* f, char* buff, size_t len);
 
-	std::string PrintSpaceLeft() const;
 	void PrintTree();
-
-	std::mutex tree;	// Locks file hierarchy updates 
 
 	VDisk() = delete;
 	VDisk(const std::string fileName);						// Open existing VDisk
 	VDisk(const std::string fileName, const uint64_t size);	// Create new VDisk
 	~VDisk();
+
+	friend std::ostream& operator<<(std::ostream& s, const VDisk& disk);
 };
+std::ostream& operator<<(std::ostream& s, const VDisk& disk);
 
 /* ---VFS------------------------------------------------------------------- */
 
@@ -264,4 +269,3 @@ char* DirToChar(uint32_t nodecode, std::string name, uint32_t firstchild);
 uint64_t GetDiskSize(std::string filename);	
 
 void TreeToPlain(std::vector<char*>& info, Vertice<File*>& tree, uint32_t& nodecode);
-uint32_t CountNodes(const std::string_view path); // todo: use Path class for all path operations

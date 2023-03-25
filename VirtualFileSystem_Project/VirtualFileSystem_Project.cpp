@@ -48,7 +48,7 @@ void run_test1(VFS* vfs)
 	/ 3. Закрыть все 3 файла.
 	/ 4. Убедиться, что записалось все правильно.
 	*/
-
+	bool init_f3 = true;
 	// Each name within the path should be less than NODENAME - validation not yet implemented
 	char f1[]{ "bin\\file" };
 	char f2[]{ "bin\\goal\\abel" };
@@ -271,7 +271,16 @@ floor." };
 	std::cout << "---Create----------------------------------------\n";
 	File* file_w1 = vfs->Create(f1);
 	File* file_w2 = vfs->Create(f2);
-	File* file_r = vfs->Open(f3);
+	File* file_r;
+	if (init_f3)
+	{
+		file_r = vfs->Create(f3);
+		vfs->Write(file_w1, test2, strlen(test2));
+		vfs->Write(file_w2, test1, strlen(test1));
+		vfs->Write(file_r, test2, strlen(test2));
+		vfs->Close(file_r);
+	}
+	file_r = vfs->Open(f3);
 	std::cout << "---Print-Tree------------------------------------\n";
 	vfs->PrintAll();
 	std::cout << "---Write-----------------------------------------\n";
@@ -283,7 +292,7 @@ floor." };
 	std::cout << "---Read------------------------------------------\n";
 	int size = 3000;
 	char* buff = new char[size];
-	cout << vfs->Read(file_r, buff, size) << "/" << size << " bytes read" << endl;/**/
+	cout << vfs->Read(file_r, buff, size) << "/" << size << " bytes read" << endl;
 	std::cout << "---Close-----------------------------------------\n";
 	vfs->Close(file_w1);
 	vfs->Close(file_w2);
