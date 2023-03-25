@@ -478,7 +478,7 @@ std::ostream& operator<<(std::ostream& s, const VDisk& disk)
 	s << " Free space  :\t" << Aligned(freeSpace, ALIGN) << SEP << disk.sizeInBytes << " bytes (" << ((freeSpace * 1.0) / disk.sizeInBytes) * 100 << "%)\n";
 	s << " Nodes used  :\t" << Aligned(disk.maxNode - disk.freeNodes, ALIGN) << SEP << disk.maxNode << " (" << ((disk.maxNode - disk.freeNodes) * 1.0 / disk.maxNode) * 100 << "%)\n";
 	s << " Blocks used :\t" << Aligned(disk.maxBlock - disk.freeBlocks, ALIGN) << SEP << disk.maxBlock << " (" << ((disk.maxBlock - disk.freeBlocks) * 1.0 / disk.maxBlock) * 100 << "%)\n";
-	s << "------->               Tree              <-------\n";
+	s << "-------->              TREE             <--------\n";
 	s << disk.root->PrintVerticeTree(true);
 	s << "*************************************************\n";
 
@@ -833,7 +833,7 @@ File* VFS::Create(const char* name)
 /// <returns>Number of bytes actually read</returns>
 size_t VFS::Read(File* f, char* buff, size_t len)
 {
-	std::cout << "* Reading file: " << f->GetName() << std::endl;
+	std::cout << "* Reading file: " << f->GetName() << " -> ";
 	if (f->IsWriteMode()) {
 		std::cout << "File is open in writemode" << std::endl;
 		return 0;
@@ -848,7 +848,7 @@ size_t VFS::Read(File* f, char* buff, size_t len)
 /// <returns>Number  of bytes actually written</returns>
 size_t VFS::Write(File* f, char* buff, size_t len)
 {
-	std::cout << "* Writing in file: " << f->GetName() << std::endl;
+	std::cout << "* Writing in file: " << f->GetName() << " -> ";
 	VDisk* vd = (*GetDisk(f->GetFather()));
 	if (!vd) throw std::runtime_error("No disk found for the file");
 	return vd->WriteInFile(f, buff, len);
@@ -874,10 +874,7 @@ void VFS::Close(File* f)
 void VFS::PrintAll()
 {
 	for (auto iter = disks.begin(); iter != disks.end(); ++iter)
-	{
-		std::cout << "VDisk: " << (*iter)->GetName() << std::endl;
 		std::cout << *(*iter);
-	}
 }
 
 VFS::VFS()

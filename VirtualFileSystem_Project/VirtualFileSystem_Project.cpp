@@ -28,7 +28,7 @@ int main()
 
 	try	
 	{
-		//measure_time(run_test1, vfs);
+		measure_time(run_test1, vfs);
 	} catch (runtime_error& e)
 	{
 		std::cout << e.what() << endl;
@@ -272,8 +272,8 @@ floor." };
 0101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101"
 	};
 	std::cout << "---Create----------------------------------------\n";
-	File* file_w1 = vfs->Create(f1);
-	File* file_w2 = vfs->Create(f3);
+	File* file_w1 = vfs->Create(f3);
+	File* file_w2 = vfs->Create(f1);
 	File* file_r;
 	if (init_f3)
 	{
