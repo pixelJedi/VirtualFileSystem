@@ -207,7 +207,6 @@ void VDisk::WriteHierarchy()
 	std::vector<char*> nodes;
 	TreeToPlain(nodes, *root, nodecode);
 
-	std::cout << "Max nodecode: " << nodecode << std::endl;
 	uint32_t pos = addrMap[Sect::s_nodes];
 	for (int i = 0; i!= nodes.size(); i++)
 	{

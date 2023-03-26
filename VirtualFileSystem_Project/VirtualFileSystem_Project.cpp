@@ -1,6 +1,5 @@
 ﻿#include <iostream>
 #include <string>
-#include <bitset>
 #include "IVFS.h"
 #include "Vertice.h"
 
@@ -15,11 +14,10 @@ int main()
 {
 	VFS* vfs = new VFS();
 	string diskname = "test.tfs";
-	std::cout << "Testing file: " << diskname << endl;
+	std::cout << "Testing disk: " << diskname << endl;
 
 	try	
 	{ 
-		std::cout << "---Mount-----------------------------------------\n";
 		vfs->MountOrCreate(diskname);
 	} catch (std::invalid_argument& e)
 	{
@@ -34,12 +32,8 @@ int main()
 		std::cout << e.what() << endl;
 	}
 
-	std::cout << "---Print-Tree------------------------------------\n";
 	vfs->PrintAll();
-
-	std::cout << "---Unmount---------------------------------------\n";
 	vfs->Unmount(diskname);
-
 	delete vfs;
 }
 
@@ -271,7 +265,7 @@ floor." };
 0101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101\
 0101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101"
 	};
-	std::cout << "---Create----------------------------------------\n";
+	std::cout << "-- Create ---------------------------------------\n";
 	File* file_w1 = vfs->Create(f3);
 	File* file_w2 = vfs->Create(f1);
 	File* file_r;
@@ -284,17 +278,20 @@ floor." };
 		vfs->Write(file_w2, test1, strlen(test1));
 	}
 	file_r = vfs->Open(f2);
-	std::cout << "---Write-----------------------------------------\n";
-	cout << vfs->Write(file_w2, test3, strlen(test3)) << "/" << strlen(test3) << " bytes wrote" << endl;
-	cout << vfs->Write(file_w1, test1, strlen(test1)) << "/" << strlen(test1) << " bytes wrote" << endl;
-	cout << vfs->Write(file_w2, test2, strlen(test2)) << "/" << strlen(test2) << " bytes wrote" << endl;
-	cout << vfs->Write(file_w1, test2, strlen(test2)) << "/" << strlen(test2) << " bytes wrote" << endl;
-	cout << vfs->Write(file_w2, test1, strlen(test1)) << "/" << strlen(test1) << " bytes wrote" << endl;
-	std::cout << "---Read------------------------------------------\n";
-	int size = 3000;
+	std::cout << "-- Write ----------------------------------------\n";
+	if (file_w2) cout << vfs->Write(file_w2, test3, strlen(test3)) << "/" << strlen(test3) << " bytes wrote" << endl;
+	if (file_w1) cout << vfs->Write(file_w1, test1, strlen(test1)) << "/" << strlen(test1) << " bytes wrote" << endl;
+	if (file_w2) cout << vfs->Write(file_w2, test2, strlen(test2)) << "/" << strlen(test2) << " bytes wrote" << endl;
+	if (file_w1) cout << vfs->Write(file_w1, test2, strlen(test2)) << "/" << strlen(test2) << " bytes wrote" << endl;
+	if (file_w2) cout << vfs->Write(file_w2, test1, strlen(test1)) << "/" << strlen(test1) << " bytes wrote" << endl;
+	std::cout << "-- Read -----------------------------------------\n";
+	int size = 5000;
 	char* buff = new char[size];
 	cout << vfs->Read(file_r, buff, size) << "/" << size << " bytes read" << endl;
-	std::cout << "---Close-----------------------------------------\n";
+	const size_t firstchars = 70;
+	const int len = (int)min(firstchars, strlen(buff));
+	printf("First %d are:\n%.*s\n", len, len, buff);
+	std::cout << "-- Close ----------------------------------------\n";
 	vfs->Close(file_w1);
 	vfs->Close(file_w2);
 	vfs->Close(file_r);
