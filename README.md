@@ -171,11 +171,11 @@ Is a container node with named children, based on std::map, which is based on [R
 ## FAQ
 > **1. Can I read, write, open or create files using your VFS?**
 
-So-so. I'm still meditating on debugging, but basically, yes. I can guarantee you're able to run the test code in the project's main, it will demonstrate IVFS interface's work.
+Finally, yes! Some bugs are most likely hiding somewhere, but I can guarantee you're able to run the `runtest1` code in the project's main. Feel free to alter parameters commented with arrow (<--).
 
 > **2. Why do you show us such a raw code?**
 
-We all like to show off. I mean, hey, look at this awesome thing that I developed without knowing where to start 4 weeks ago! Joking. Check the updates.
+We all like to show off. I mean, hey, look at this awesome thing that I developed without knowing where to start a month ago! Joking. Check the updates.
 
 > **3. Why so slow, dude?**
 
@@ -183,11 +183,11 @@ The main reason is lack of time and skill, as always are. I've overestimated my 
 
 > **4. Okay, can I do something with VFS?**
 
-Oh yeah! After some weeks you can not only mount and unmount VDisks, but also write data, save it between sessions, and also run a bunch of mid-level functions (although you're not supposed to use them directly, but anyway). You can run the test code several times, open the hex editor and check that the data is on its place. Still pretty inspiring to see it working, y'know.
+Oh yeah! After some weeks you can not only mount and unmount VDisks, but also write and read data, save it between sessions, and also run a bunch of mid-level functions (although you're not supposed to use them directly, but anyway). You can run the test code several times, check the console output or open the hex editor and see that the data is on its place. Still pretty inspiring to see it working, y'know.
 
 > **5. What about multithreading?**
 
-There are trivial mutexes (wrapped in std::lock_guard) to prevent working with outdated data. I'm rather new to it, so maybe I'll learn a more effective way (I've heard mutex causes system calls which slow down the process). 
+There are trivial mutexes (wrapped in std::lock_guard) to prevent working with outdated data. I'm rather new to it, so maybe I'll learn a more effective way (I've heard mutex causes system calls which slow down the process). Mutexed protect block/node allocation, access changes and tree changes.
 
 > **6. What was this about learning? Didn't you know what are you dealing with?**
 
@@ -198,3 +198,17 @@ Plus, I've refreshed my understanding of file systems, learned working with Gith
 > **7. All addresses are `uint32_t`, why?**
 
 The task was to store "hundreds of thousand files". Assuming a file has 16 blocks in average (I've noted the number while surfing in random EXT4 overviews and found it quite handy) 3 bytes could be enough to address each. Initially, I was thinking of a custom 3-byte type, but after all it wasn't worth it. Classic 4-byte integer won (and I specified the size explicitly).
+
+> **8. Name main issues within the VFS.**
+
+Still not in better condition:
+- Memory leaks (not quite following RAII) - still to be fixed.
+- Handling exceptions - still not sure, what's the best way to use them, so currently I'm reworking the approach.
+- Input validation - barely present; it's expected that paths and parameters are validated by the user. Thinking of changing that.
+
+> **9. Any plans or ideas?**
+
+1. Currently all the Files in the tree are loaded by default. That means, they waste time and memory even if they are not going to be used. I'm going to move the LoadFile() function to the SeekFile(), so that the missing data will be parsed from BinDisk only when it's needed.
+2. I'm thinking of hiding block and node logic to separate classes nested in VDisk. Nodes will possible be moved to a static decorator derived from Vertice, and blocks will require some BlockManager (which can later be used for tracking free blocks).
+3. Deleting files could be useful.
+4. I'd like to rework Files. Currently, saving names is not necessary (names are tracked within the Vertice), and the metadata is used for dir/file flagging - that also can be tracked through Vertice (leaves are always files, other nodes are always dirs). 
