@@ -213,26 +213,6 @@ void VDisk::WriteHierarchy()
 		disk.SetBytes(pos + i * NODEDATA, nodes[i], NODEDATA);
 	}
 }
-/// <summary>
-/// Sets the file that hasn't been used yet
-/// </summary>
-/// <returns>True if operation was successful</returns>
-bool VDisk::InitDisk()
-{
-	try
-	{
-		disk.MakeZeroFile(sizeInBytes);
-		freeNodes = maxNode;
-		freeBlocks = maxBlock;
-		nextFreeBlock = 0;
-		UpdateDisk();
-	}
-	catch (...)
-	{
-		return false;
-	}
-	return true;
-}
 void VDisk::UpdateTBs(File* f)
 {
 	uint32_t cur = f->GetMainTB(), next, last = f->GetLastTB();
@@ -635,8 +615,12 @@ VDisk::VDisk(const std::string fileName, const uint64_t size) :
 	disk.Open(fileName, true);
 	root = new Vertice<File*>();
 
-	if (!InitDisk()) throw std::runtime_error("Initialization failed");
-	else std::cout << "Disk \"" << name << "\" initialized\n";
+	disk.MakeZeroFile(sizeInBytes);
+	freeNodes = maxNode;
+	freeBlocks = maxBlock;
+	nextFreeBlock = 0;
+	UpdateDisk();
+	std::cout << "Disk \"" << name << "\" initialized\n";
 }
 VDisk::~VDisk()
 {
@@ -659,40 +643,45 @@ bool VFS::MountOrCreate(std::string& diskName)
 	
 	if (!std::filesystem::exists(diskName))
 	{
+		const char badinput = '-';
 		char answer;
-		std::cout << "\"" << diskName << "\" doesn't exist. Create? y/n\n> ";
-		std::cin >> answer;
-		std::cin.ignore(UINT32_MAX, '\n');
-		std::cin.clear();
-		switch (answer)
+		do
 		{
-		case 'Y':
-		case 'y':
-		{
-			size_t diskSize = 0;
-			std::cout << "Specify size of disk \"" + diskName + "\", bytes (minimum " + std::to_string(DISKDATA + NODEDATA + CLUSTER*BLOCK) + " B)\n> ";
-			std::cin >> diskSize;
+			std::cout << "\"" << diskName << "\" doesn't exist. Create? y/n\n> ";
+			std::cin >> answer;
 			std::cin.ignore(UINT32_MAX, '\n');
 			std::cin.clear();
-			if (IsValidSize(diskSize))
+			switch (answer)
 			{
-				VDisk* vd = new VDisk(diskName, diskSize);
-				VFS::disks.push_back(vd);
-				std::cout << "Created and mounted disk \"" + diskName + "\" with size " + std::to_string(vd->GetSizeInBytes()) + " B\n";
-				mountSuccessful = true;
+			case 'Y':
+			case 'y':
+			{
+				size_t diskSize = 0;
+				std::cout << "Specify size of disk \"" + diskName + "\", bytes (minimum " + std::to_string(DISKDATA + NODEDATA + CLUSTER*BLOCK) + " B)\n> ";
+				std::cin >> diskSize;
+				std::cin.ignore(UINT32_MAX, '\n');
+				std::cin.clear();
+				if (IsValidSize(diskSize))
+				{
+					VDisk* vd = new VDisk(diskName, diskSize);
+					VFS::disks.push_back(vd);
+					std::cout << "Created and mounted disk \"" + diskName + "\" with size " + std::to_string(vd->GetSizeInBytes()) + " B\n";
+					mountSuccessful = true;
+					break;
+				}
+				std::cout << "Size is invalid. ";
+			}
+			[[fallthrough]];
+			case 'N':
+			case 'n':
+				std::cout << "Disk \"" << diskName << "\" was not mounted\n";
+				break;
+			default:
+				answer = badinput;
 				break;
 			}
-			std::cout << "Size is invalid. ";
-		}
-		[[fallthrough]];
-		case 'N':
-		case 'n':
-			std::cout << "Disk \"" << diskName << "\" was not mounted\n";
-			break;
-		default:
-			throw std::invalid_argument("Bad input. Try again -> ");
-			break;
-		}
+		} while (answer == badinput);
+		
 	}
 	else
 	{
@@ -772,7 +761,7 @@ File* VFS::Open(const char* name)
 		}
 	}
 	std::cout << "failed" << std::endl;
-	return nullptr;
+	return file;
 }
 /// <summary>
 /// Opens or creates the file in writeonly mode. Creates transit directories.
@@ -854,6 +843,7 @@ size_t VFS::Write(File* f, char* buff, size_t len)
 }
 void VFS::Close(File* f)
 {
+	if (!f) return;
 	std::cout << "* Closing file: " << f->GetName() << " -> ";
 	if (f->IsBusy())
 	{

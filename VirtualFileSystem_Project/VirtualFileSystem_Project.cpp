@@ -1,43 +1,45 @@
 ﻿#include <iostream>
 #include <string>
+#include <cstdlib>
 #include "IVFS.h"
 #include "Vertice.h"
 
-// #include <time.h>	
-
 using namespace std;
 
-void run_test1(VFS* vfs);
-void measure_time(void(*test)(VFS*), VFS* v);
+void run_test1(VFS* vfs, std::vector<std::string>& paths);
+void measure_time(void(*test)(VFS*, std::vector<std::string>&), VFS* v, std::vector<std::string>& paths);
 
 int main()
 {
-	VFS* vfs = new VFS();
-	string diskname = "test.tfs";
+	// To work with a blank file, alter the [diskname] or delete the existing file from the project folder
+	string diskname = "test.tfs";		// <-- Set VDisk filename here
+	std::vector<std::string> paths =	// <-- Set paths to files here. Each name within the path should be less than NODENAME - outer validation expected
+	{
+		"bin\\file",
+		"bin\\goal\\abel",
+		"alpha"
+	};
+
 	std::cout << "Testing disk: " << diskname << endl;
-
-	try	
+	VFS* vfs = new VFS();
+	if (vfs->MountOrCreate(diskname))
 	{ 
-		vfs->MountOrCreate(diskname);
-	} catch (std::invalid_argument& e)
-	{
-		std::cout << e.what();
-	}
+		try	{
+		// ************************************************* <-- See test here
+			measure_time(run_test1, vfs, paths); 
+		// *************************************************
+		} catch (runtime_error& e)
+		{
+			std::cout << e.what() << endl;
+		}
 
-	try	
-	{
-		measure_time(run_test1, vfs);
-	} catch (runtime_error& e)
-	{
-		std::cout << e.what() << endl;
+		vfs->PrintAll();
+		vfs->Unmount(diskname);
 	}
-
-	vfs->PrintAll();
-	vfs->Unmount(diskname);
 	delete vfs;
 }
 
-void run_test1(VFS* vfs)
+void run_test1(VFS* vfs, std::vector<std::string>& paths)
 {
 	/* (One thread)
 	/ 1. Открыть 2 файла на запись, 1 на чтение (заранее предсоздать).
@@ -45,12 +47,9 @@ void run_test1(VFS* vfs)
 	/ 3. Закрыть все 3 файла.
 	/ 4. Убедиться, что записалось все правильно.
 	*/
-	bool init_f3 = false;
-	// Each name within the path should be less than NODENAME - validation not yet implemented
-	char f1[]{ "bin\\file" };
-	char f2[]{ "bin\\goal\\abel" };
-	char f3[]{ "alpha" };
-	char test1[]{	// 2000 bytes
+	// <-- Alter test texts here
+	std::vector<std::string> texts { 
+	// 2000 bytes
 "Lorem ipsum dolor sit amet, consectetur adipiscing elit. Nulla semper tristique mauris, at tristique\
  urna accumsan sed. Curabitur ac facilisis justo, non hendrerit urna. Mauris porttitor ex eget rhonc\
 us ultricies. Suspendisse et ornare diam. Integer convallis ex vitae elementum scelerisque. Pellente\
@@ -72,8 +71,8 @@ la id nisl vitae velit mollis elementum. Aenean vestibulum ullamcorper eros, nec
  non. Quisque auctor ligula congue consequat euismod.\
 Ut vel accumsan turpis. Phasellus varius fringilla justo, euismod malesuada sem sagittis et. Nulla l\
 igula erat, finibus ac lorem ac, porttitor commodo sapien. Nunc aliquam odio vel eros maximus, non m\
-ollis tellus ultrices. Sed congue finibus pretium proin." };
-	char test2[]{	// 2139 bytes
+ollis tellus ultrices. Sed congue finibus pretium proin.",
+	// 2139 bytes
 "What was he supposed to do here? Never get angry? He wasn't sure he could have done anything without\
  being angry and who knows what would have happened to Neville and his books then. Besides, Harry ha\
 d read enough fantasy books to know how this one went. He would try to suppress the anger and he wou\
@@ -99,8 +98,8 @@ two mystery novels, too.\
 \"So how am I doing in the game?\" Harry said out loud.\
 A sheet of paper flew over his head, as if someone had thrown it from behind him - Harry turned arou\
 nd, but there was no one there - and when Harry turned forwards again, the note was settling to the \
-floor." };
-	char test3[]{	// 16300 bytes
+floor.",
+	// 16300 bytes
 "0101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101\
 0101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101\
 0101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101\
@@ -265,44 +264,69 @@ floor." };
 0101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101\
 0101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101"
 	};
+
 	std::cout << "-- Create ---------------------------------------\n";
-	File* file_w1 = vfs->Create(f3);
-	File* file_w2 = vfs->Create(f1);
-	File* file_r;
-	if (init_f3)
+	const bool init_read = true;		// <-- Set true to pre-create readonly file
+	const short ireadonly = 0;			// <-- Set which file is readonly
+	std::vector<File*> files;
+	for (short i = 0; i != paths.size(); ++i)
 	{
-		file_r = vfs->Create(f3);
-		vfs->Write(file_r, test2, strlen(test2));
-		vfs->Close(file_r);
-		vfs->Write(file_w1, test2, strlen(test2));
-		vfs->Write(file_w2, test1, strlen(test1));
+		const char* text = texts[rand() % texts.size()].c_str();
+		if (i == ireadonly)
+		{
+			File* fread;
+			if (init_read)
+			{
+				fread = vfs->Create(paths[ireadonly].c_str());
+				if (fread)
+				{
+					vfs->Write(fread, const_cast<char*>(text), strlen(text));
+					vfs->Close(fread);
+				}
+			}
+			fread = vfs->Open(paths[ireadonly].c_str());
+			files.push_back(fread);
+		}
+		else
+		{
+			files.push_back(vfs->Create(paths[i].c_str()));
+			if (files[i]) vfs->Write(files[i], const_cast<char*>(text), strlen(text));
+		}
 	}
-	file_r = vfs->Open(f2);
+	
 	std::cout << "-- Write ----------------------------------------\n";
-	if (file_w2) cout << vfs->Write(file_w2, test3, strlen(test3)) << "/" << strlen(test3) << " bytes wrote" << endl;
-	if (file_w1) cout << vfs->Write(file_w1, test1, strlen(test1)) << "/" << strlen(test1) << " bytes wrote" << endl;
-	if (file_w2) cout << vfs->Write(file_w2, test2, strlen(test2)) << "/" << strlen(test2) << " bytes wrote" << endl;
-	if (file_w1) cout << vfs->Write(file_w1, test2, strlen(test2)) << "/" << strlen(test2) << " bytes wrote" << endl;
-	if (file_w2) cout << vfs->Write(file_w2, test1, strlen(test1)) << "/" << strlen(test1) << " bytes wrote" << endl;
+	const int rolls = 10;			// <-- Set how many writings to perform
+	cout << "Writing random (" << rolls << ") rolls:\n";
+	for (int i = 0; i < rolls; ++i)
+	{
+		short randfile = short(rand() % files.size());
+		short randtext = short(rand() % texts.size());
+		if (files[randfile]) cout << vfs->Write(files[randfile], const_cast<char*>(texts[randtext].c_str()), texts[randtext].length()) << "/" << texts[randtext].length() << " bytes wrote" << endl;
+	}
+
 	std::cout << "-- Read -----------------------------------------\n";
-	int size = 5000;
-	char* buff = new char[size];
-	cout << vfs->Read(file_r, buff, size) << "/" << size << " bytes read" << endl;
-	const size_t firstchars = 70;
-	const int len = (int)min(firstchars, strlen(buff));
-	printf("First %d are:\n%.*s\n", len, len, buff);
+	int size = 5000;				// <-- Set how many bytes should be read (starting from the beginning)
+	const size_t firstchars = 70;	// <-- Set how many of them to display
+	if (files[ireadonly])
+	{
+		char* buff = new char[size];
+		cout << vfs->Read(files[ireadonly], buff, size) << "/" << size << " bytes read" << endl;
+		const int len = (int)min(firstchars, strlen(buff));
+		printf("First %d are:\n%.*s\n", len, len, buff);
+	}
+
 	std::cout << "-- Close ----------------------------------------\n";
-	vfs->Close(file_w1);
-	vfs->Close(file_w2);
-	vfs->Close(file_r);
+	for (auto f : files) {
+		vfs->Close(f);
+	}
 }
 
-void measure_time(void(*test)(VFS*), VFS* v)
+void measure_time(void(*test)(VFS*, std::vector<std::string>& paths), VFS* v, std::vector<std::string>& paths)
 {
 	clock_t tStart, tFin;
 	printf("\n>> Time measuring started!\n");
 	tStart = clock();
-	test(v);
+	test(v, paths);
 	tFin = clock();
 	printf(">> Time taken: %.2fs\n\n", (double)(tFin - tStart) / CLOCKS_PER_SEC);
 }

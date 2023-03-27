@@ -169,7 +169,6 @@ private:
 
 	// Uses BinDisk data directly
 
-	bool InitDisk();									// Formats new BinDisk
 	void UpdateTBs(File* f);
 	void UpdateDisk();									// Refreshes data in the associated BinDisk
 
