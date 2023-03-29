@@ -42,7 +42,7 @@ It's possible to mount and unmount VDisks by providing names of corresponding fi
 VFS operations may be used by multiple threads. The shared data should be protected against collisions.
 - The protected are VDisk variables: **freeBlocks**, **freeNodes** and **nextFreeBlock** as functions rely on these counters when allocating data. The protection is implemented as a simple mutex guard lock.
 - Another thing to concern is the **file access status**. The guard wraps code where it's checked and changed.
-- And also the Node tree (VDisk::root) becomes locked when a new file is added. 
+- And also the file tree (VDisk::root) becomes locked when a new file is added. 
 - Access to file blocks is not intended to be protected with mutex, as it's already safe with access flags. 
 
 ## VDisk
@@ -126,7 +126,7 @@ Members:
 
 [^2]: Previously, an abstract Node class has been uses with File and Dir as children. It's been reworked on schedule, as soon as such a division proved to be excessive. 
 
-**Concept**
+### Concept
 Physically, a File is stored in VDisk::disk in multiple blocks of data. The 1st one is addressed by the file's node in Node data section.
 A File consists of title and data blocks.
 
