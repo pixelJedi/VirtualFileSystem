@@ -50,14 +50,14 @@ Each VDisk is assosiated with a physical file in the underlying file system.
 
 ### Key members
 - `BinDisk disk`. BinDisk is derived from std::fstream and simplifies access to binary data. See [BinDisk](https://github.com/pixelJedi/VirtualFileSystem#BinDisk)
-- `Vertice<Node*>* root`. Represents the root of the file hierarhy. Read more on [Vertices](https://github.com/pixelJedi/VirtualFileSystem#Vertice) and [Nodes](https://github.com/pixelJedi/VirtualFileSystem#Node);
+- `Vertice<File*>* root`. Represents the root of the file hierarhy. Read more on [Vertices](https://github.com/pixelJedi/VirtualFileSystem#Vertice) and [Nodes](https://github.com/pixelJedi/VirtualFileSystem#Node);
 - `std::map<Sect, uint32_t> addrMap`. Stores all offsets to important data sections. Sect\[ion\] is a private enumerator.
 
 ### Constructors
 - `VDisk(const std::string fileName)`: for existing files. The file is checked and specific addresses and data are loaded into VDisk object;
 - `VDisk(const std::string fileName, const uint64_t size)`: initializes a new file. The size is estimated and truncated.
  
-> Estimation rule: `DISKDATA + X*NODEDATA + (X*16+C)*BLOCK` should fit in without remainder
+> Estimation rule: `DISKDATA + X*NODEDATA + (X*CLUSTER+C)*BLOCK` should fit in without remainder
 
 ### Data Sections
 ![VDisk internals](/VirtualFileSystem_Description/VDisk.png)
@@ -106,14 +106,16 @@ Both wrap corresponding fstream functions. `Open` accepts `asNew` parameter whic
 ### Also
 - `MakeZeroFile(size_t size)`: fills the stream with null-terminator '\0'
 
-## Node
-Is an abstract class which represents a, well, node in file hierarchy.[^2]
-The derived are Dir and [File](https://github.com/pixelJedi/VirtualFileSystem#File)
+## File
+Is an struct which represents the data that is sufficient to manipulate a particular file in hierarchy.[^2]
 
 Members:
 - `std::string _fathername`: 	the name of hosting VDisk;
 - `std::string _name`: 	node name;
-- `uint32_t _nodeAddr`: 	address in the hosting VDisk's Node data section;
+- `realSize`: is used to calculate current pointer for writing, remaining space, etc.;
+- `writemode` flag and `readmode` counter: are used to prevent threading collisions;
+- `mainTB` and `lastTB` addresses: stored for quick access;
+- `blocks`: loaded when the File is opened and updated during the runtime.
 - `virtual char* NodeToChar(uint32_t nodeCode) = 0`: transforms node to binary, taking nodeCode from the outside.
 
 `NodeToChar` is a key part in transforming the multidemensional file hierarchy into a linear list of nodes.
@@ -122,16 +124,7 @@ Members:
 * Node Code is calculated during the conversion, it is not supposed to be stored during runtime.
 * Addresses are needed when the data is loaded. During the runtime, the tree is stored in Vertices.
 
-[^2]: Remove candidate. As soon as Nodes are stored in the Vertice (tree with named relations), storing name here is a data duplication (although it's often handy). What's more, currently it's possible to distinguish Files from Nodes through the Vertice peculiarities, so only the File class is currently needed. However, the inheritance is being kept as Dir may need specific traits in the future. 
-
-## File
-As a struct, the File is intended to quickly point at the relevant data. 
-
-**Key members**
-- `realSize`: is used to calculate current pointer for writing, remaining space, etc.;
-- `writemode` flag and `readmode` counter: are used to prevent threading collisions;
-- `mainTB` and `lastTB` addresses: stored for quick access;
-- `blocks`: loaded when the File is opened and updated during the runtime.
+[^2]: Previously, an abstract Node class has been uses with File and Dir as children. It's been reworked on schedule, as soon as such a division proved to be excessive. 
 
 **Concept**
 Physically, a File is stored in VDisk::disk in multiple blocks of data. The 1st one is addressed by the file's node in Node data section.
